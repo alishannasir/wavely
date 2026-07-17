@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+}
+
+enum SubscriptionPlan {
+  FREE
+  MONTHLY
+  ANNUAL
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum ReportReason {
+  NUDITY
+  HARASSMENT
+  MINOR_CONCERN
+  SPAM
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+}
+
+model User {
+  id            String       @id @default(cuid())
+  email         String       @unique
+  passwordHash  String?
+  authProvider  AuthProvider
+  displayName   String?
+  avatarUrl     String?
+  birthdate     DateTime?
+  gender        Gender?
+  country       String?
+  createdAt     DateTime     @default(now())
+  trialEndsAt   DateTime
+  currentStreak Int          @default(0)
+  lastActiveDate DateTime?
+  creditCents   Int          @default(0)
+  status        UserStatus   @default(ACTIVE)
+
+  subscriptions    Subscription[]
+  sessionsAsA      CallSession[] @relation("SessionUserA")
+  sessionsAsB      CallSession[] @relation("SessionUserB")
+  friendsAsA       Friend[]      @relation("FriendUserA")
+  friendsAsB       Friend[]      @relation("FriendUserB")
+  sentMessages     Message[]     @relation("MessageSender")
+  receivedMessages Message[]     @relation("MessageReceiver")
+  reportsMade      Report[]      @relation("ReportReporter")
+  reportsReceived  Report[]      @relation("ReportReported")
+  dailyUsage       DailyUsage[]
+
+  @@map("users")
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String
+  stripeCustomerId     String?
+  stripeSubscriptionId String?            @unique
+  plan                 SubscriptionPlan
+  status               SubscriptionStatus
+  currentPeriodEnd     DateTime?
+  user                 User               @relation(fields: [userId], references: [id])
+
+  @@map("subscriptions")
+}
+
+model CallSession {
+  id        String    @id @default(cuid())
+  userAId   String
+  userBId   String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+  roomId    String?
+  userA     User      @relation("SessionUserA", fields: [userAId], references: [id])
+  userB     User      @relation("SessionUserB", fields: [userBId], references: [id])
+  reports   Report[]
+
+  @@map("sessions")
+}
+
+model Friend {
+  id        String       @id @default(cuid())
+  userAId   String
+  userBId   String
+  status    FriendStatus @default(PENDING)
+  createdAt DateTime     @default(now())
+  userA     User         @relation("FriendUserA", fields: [userAId], references: [id])
+  userB     User         @relation("FriendUserB", fields: [userBId], references: [id])
+
+  @@unique([userAId, userBId])
+  @@map("friends")
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  content    String
+  createdAt  DateTime @default(now())
+  sender     User     @relation("MessageSender", fields: [senderId], references: [id])
+  receiver   User     @relation("MessageReceiver", fields: [receiverId], references: [id])
+
+  @@map("messages")
+}
+
+model Report {
+  id             String       @id @default(cuid())
+  reporterId     String
+  reportedUserId String
+  sessionId      String?
+  reasonCode     ReportReason
+  status         ReportStatus @default(OPEN)
+  createdAt      DateTime     @default(now())
+  reporter       User         @relation("ReportReporter", fields: [reporterId], references: [id])
+  reported       User         @relation("ReportReported", fields: [reportedUserId], references: [id])
+  session        CallSession? @relation(fields: [sessionId], references: [id])
+
+  @@map("reports")
+}
+
+model DailyUsage {
+  userId      String
+  date        DateTime @db.Date
+  minutesUsed Int      @default(0)
+  matchesUsed Int      @default(0)
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@id([userId, date])
+  @@map("daily_usage")
+}
+
+// Configurable free-tier caps; null means unlimited. Never hardcode limits in code.
+model PlanLimit {
+  plan           SubscriptionPlan @id
+  dailyMinutes   Int?
+  dailyMatches   Int?
+  adsEnabled     Boolean          @default(false)
+  filtersEnabled Boolean          @default(true)
+
+  @@map("plan_limits")
+}

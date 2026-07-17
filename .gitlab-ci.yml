@@ -1,0 +1,22 @@
+image: node:20
+
+stages:
+  - build
+
+backend:
+  stage: build
+  script:
+    - cd backend
+    - npm install
+    - npx prisma generate
+    - npm run typecheck
+    - npm run test
+    - npm run build
+
+frontend:
+  stage: build
+  script:
+    - cd frontend
+    - npm install
+    - npm run typecheck
+    - npm run build
