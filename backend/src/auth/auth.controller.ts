@@ -14,6 +14,7 @@ import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ExchangeDto } from './dto/exchange.dto';
 import { GeoGuard } from '../common/geo/geo.guard';
 
 @Controller('auth')
@@ -40,9 +41,15 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Req() req: any, @Res() res: Response) {
-    const { access_token } = await this.auth.oauthLogin(req.user, req.country ?? null);
+    const { user } = await this.auth.oauthLogin(req.user, req.country ?? null);
+    const code = await this.auth.createLoginCode(user.id);
     const frontend = process.env.FRONTEND_URL ?? 'http://localhost:5173';
-    res.redirect(`${frontend}/auth/callback?token=${access_token}`);
+    res.redirect(`${frontend}/auth/callback?code=${code}`);
+  }
+
+  @Post('exchange')
+  exchange(@Body() dto: ExchangeDto) {
+    return this.auth.exchangeLoginCode(dto.code);
   }
 
   @Post('apple')

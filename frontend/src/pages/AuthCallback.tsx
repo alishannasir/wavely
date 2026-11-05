@@ -8,13 +8,21 @@ export default function AuthCallback() {
   const [params] = useSearchParams();
 
   useEffect(() => {
-    const token = params.get('token');
-    if (!token) {
+    const code = params.get('code');
+    if (!code) {
       navigate('/login');
       return;
     }
-    useAuth.getState().setToken(token);
-    api<User>('/users/me')
+    // Remove the one-time code from the address bar/history right away.
+    window.history.replaceState(null, '', '/auth/callback');
+    api<{ access_token: string; user: User }>('/auth/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    })
+      .then(({ access_token }) => {
+        useAuth.getState().setToken(access_token);
+        return api<User>('/users/me');
+      })
       .then((user) => {
         useAuth.getState().setUser(user);
         // OAuth signups have no birthdate yet; onboarding collects it (18+ gate).

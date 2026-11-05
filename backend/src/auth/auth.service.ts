@@ -4,7 +4,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomBytes } from 'crypto';
+import Redis from 'ioredis';
+import { REDIS } from '../redis/redis.module';
 import * as bcrypt from 'bcryptjs';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,7 +29,24 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {}
+
+  /** Stores the login result under a single-use code (60s) so no JWT ever travels in a URL. */
+  async createLoginCode(userId: string): Promise<string> {
+    const code = randomBytes(32).toString('hex');
+    await this.redis.set(`auth:code:${code}`, userId, 'EX', 60);
+    return code;
+  }
+
+  async exchangeLoginCode(code: string) {
+    // GETDEL makes the code single-use even under concurrent requests.
+    const userId = await this.redis.getdel(`auth:code:${code}`);
+    if (!userId) throw new UnauthorizedException('Invalid or expired code');
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.status !== 'ACTIVE') throw new ForbiddenException('Account is suspended or banned');
+    return this.tokenFor(user);
+  }
 
   static ageOf(birthdate: Date): number {
     const now = new Date();
