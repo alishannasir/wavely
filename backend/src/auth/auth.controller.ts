@@ -16,6 +16,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ExchangeDto } from './dto/exchange.dto';
 import { GuestDto } from './dto/guest.dto';
+import { primaryFrontendUrl } from '../common/cors';
 import { UpgradeGuestDto } from './dto/upgrade-guest.dto';
 import { clientIp, sanitizeDeviceId } from '../common/client-info';
 
@@ -59,7 +60,7 @@ export class AuthController {
   async googleCallback(@Req() req: any, @Res() res: Response) {
     const { user } = await this.auth.oauthLogin(req.user, req.country ?? null);
     const code = await this.auth.createLoginCode(user.id);
-    const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontend = primaryFrontendUrl();
     res.redirect(`${frontend}/auth/callback?code=${code}`);
   }
 

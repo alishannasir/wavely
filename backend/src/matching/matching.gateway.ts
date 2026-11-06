@@ -25,6 +25,7 @@ import { ReportsService } from '../moderation/reports.service';
 import { BansService } from '../moderation/bans.service';
 import { clientIp, sanitizeDeviceId } from '../common/client-info';
 import { AuthService } from '../auth/auth.service';
+import { corsOrigin } from '../common/cors';
 import { isCountryAllowed, resolveCountry } from '../common/geo/geo.config';
 
 interface FindMatchPayload {
@@ -51,7 +52,7 @@ const userRoom = (userId: string) => `user:${userId}`;
  * All shared state (queue, active calls, pending calls, presence) lives in Redis, and
  * Socket.IO uses the Redis adapter, so several API instances can run side by side.
  */
-@WebSocketGateway({ cors: { origin: process.env.FRONTEND_URL || 'http://localhost:5173' } })
+@WebSocketGateway({ cors: { origin: corsOrigin } })
 export class MatchingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
 {
