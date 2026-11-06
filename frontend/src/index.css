@@ -2,12 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+  /* RGB channels so Tailwind can apply opacity: bg-brand/20 */
+  --c-brand: 91 60 196;
+  --c-brand-700: 74 47 168;
+  --c-brand-50: 238 234 251;
+  --c-accent: 22 104 209;
+  --c-accent-700: 15 87 179;
+  --c-danger: 210 51 74;
+  --c-danger-700: 184 38 64;
+  --c-page: 238 240 246;
+  --c-surface: 255 255 255;
+  --c-surface-2: 245 246 250;
+  --c-line: 221 224 234;
+  --c-stage: 14 11 26;
+  --c-ink: 28 26 46;
+  --c-muted: 93 91 114;
+  --c-warn: 180 83 9;
+}
+
 body {
-  @apply bg-zinc-950 text-zinc-100 font-body antialiased;
+  @apply bg-page text-ink font-body antialiased;
 }
 
 h1,
 h2,
 h3 {
-  @apply font-heading;
+  @apply font-display;
+}
+
+.doodle-light {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22260%22 height=%22260%22 viewBox=%220 0 260 260%22 fill=%22none%22 stroke=%22%23D3D7E6%22 stroke-width=%222.2%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%0A%3Cpath d=%22M40 30l6 14 15 1-12 10 4 15-13-8-13 8 4-15-12-10 15-1z%22/%3E%0A%3Cpath d=%22M170 40c-10-14-30 0-14 16l14 12 14-12c16-16-4-30-14-16z%22/%3E%0A%3Cpath d=%22M60 150h70a12 12 0 0 1 12 12v22a12 12 0 0 1-12 12h-40l-14 12v-12h-16a12 12 0 0 1-12-12v-22a12 12 0 0 1 12-12z%22/%3E%0A%3Cpath d=%22M190 150c8-10 20-6 22 4 10-2 18 8 10 16h-34c-10-2-8-16 2-20z%22/%3E%0A%3Cpath d=%22M20 232l14-12 14 12 14-12 14 12%22/%3E%0A%3Ccircle cx=%22205%22 cy=%22228%22 r=%229%22/%3E%3Cpath d=%22M130 24l0 0%22/%3E%3Cpath d=%22M118 96l10 10m0-10l-10 10%22/%3E%0A%3C/svg%3E");
+  background-size: 260px 260px;
+}
+.doodle-brand {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22260%22 height=%22260%22 viewBox=%220 0 260 260%22 fill=%22none%22 stroke=%22rgba(255,255,255,0.14)%22 stroke-width=%222.2%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%0A%3Cpath d=%22M40 30l6 14 15 1-12 10 4 15-13-8-13 8 4-15-12-10 15-1z%22/%3E%0A%3Cpath d=%22M170 40c-10-14-30 0-14 16l14 12 14-12c16-16-4-30-14-16z%22/%3E%0A%3Cpath d=%22M60 150h70a12 12 0 0 1 12 12v22a12 12 0 0 1-12 12h-40l-14 12v-12h-16a12 12 0 0 1-12-12v-22a12 12 0 0 1 12-12z%22/%3E%0A%3Cpath d=%22M190 150c8-10 20-6 22 4 10-2 18 8 10 16h-34c-10-2-8-16 2-20z%22/%3E%0A%3Cpath d=%22M20 232l14-12 14 12 14-12 14 12%22/%3E%0A%3Ccircle cx=%22205%22 cy=%22228%22 r=%229%22/%3E%3Cpath d=%22M130 24l0 0%22/%3E%3Cpath d=%22M118 96l10 10m0-10l-10 10%22/%3E%0A%3C/svg%3E");
+  background-size: 260px 260px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

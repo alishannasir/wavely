@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import Modal from './ui/Modal';
+import ChunkyButton from './ui/ChunkyButton';
 
 interface Props {
   onAccept: () => Promise<void>;
   onCancel: () => void;
 }
 
+/** Shown before the first chat: 18+ confirmation, rules and the safety reminder. */
 export default function RulesModal({ onAccept, onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,34 +24,30 @@ export default function RulesModal({ onAccept, onCancel }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-6 flex flex-col gap-4">
-        <h2 className="text-xl font-bold">Before you start</h2>
-        <p className="text-sm text-zinc-300">By pressing “I agree”, you confirm you are 18 or older and agree to:</p>
-        <ul className="list-disc pl-5 text-sm text-zinc-300 flex flex-col gap-1">
-          <li>Keep your face visible and be respectful.</li>
-          <li>No nudity, sexual content, harassment, hate or threats.</li>
-          <li>Never share personal information such as your address or passwords.</li>
-          <li>Anyone you meet is a stranger. You can skip or leave at any time.</li>
-        </ul>
-        <p className="text-xs text-zinc-400">
-          ⚠️ Safety reminder: use the Report button if someone breaks these rules. Reports include a
-          screenshot and are reviewed by moderators. Rule violators are banned, including by device and IP.
-        </p>
-        {error && <p className="text-sm text-red-400">{error}</p>}
-        <div className="flex gap-3">
-          <button onClick={onCancel} className="flex-1 rounded-xl border border-zinc-700 py-3 text-zinc-300">
-            Cancel
-          </button>
-          <button
-            onClick={accept}
-            disabled={busy}
-            className="flex-1 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold py-3 disabled:opacity-60"
-          >
-            I agree
-          </button>
-        </div>
+    <Modal open onClose={onCancel} labelledBy="rules-title" className="max-w-lg">
+      <h2 id="rules-title" className="mb-3 text-center font-display text-2xl font-semibold text-brand">
+        Before you start
+      </h2>
+      <p className="mb-3 text-sm text-muted">By pressing “I agree”, you confirm you are 18 or older and agree to:</p>
+      <ul className="mb-4 list-disc space-y-1 pl-5 text-sm">
+        <li>Keep your face visible and be respectful.</li>
+        <li>No nudity, sexual content, harassment, hate or threats.</li>
+        <li>Never share personal information such as your address or passwords.</li>
+        <li>Anyone you meet is a stranger. You can go to the next person or leave at any time.</li>
+      </ul>
+      <p className="mb-4 rounded-xl bg-brand-50 p-3 text-xs text-muted">
+        <strong className="text-ink">Safety reminder:</strong> use the Report button if someone breaks these rules. Reports
+        include a screenshot and are reviewed by moderators. Rule violators are banned, including by device and IP.
+      </p>
+      {error && <p className="mb-3 text-sm font-semibold text-danger">{error}</p>}
+      <div className="flex gap-3">
+        <ChunkyButton variant="neutral" onClick={onCancel} className="flex-1">
+          Cancel
+        </ChunkyButton>
+        <ChunkyButton onClick={accept} disabled={busy} className="flex-1">
+          I agree
+        </ChunkyButton>
       </div>
-    </div>
+    </Modal>
   );
 }
