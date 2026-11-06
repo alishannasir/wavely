@@ -28,6 +28,9 @@ The backend reads `.env` from `backend/` or the repo root.
 
 ## Tests and checks
 
+Redis-backed matching tests are skipped unless you point them at a throwaway Redis (they flush it!):
+`REDIS_URL_TEST=redis://127.0.0.1:6390 npm test`.
+
 ```bash
 cd backend  && npm run typecheck && npm test
 cd frontend && npm run typecheck && npm test

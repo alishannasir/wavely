@@ -7,19 +7,21 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
-import { BansService } from '../moderation/bans.service';
-import { clientIp, sanitizeDeviceId } from '../common/client-info';
-import { AuthService } from '../auth/auth.service';
-import { MatchingService, QueueEntry } from './matching.service';
+import { MatchingService, QueueEntry, RELAX_COUNTRY_MS, RELAX_GENDER_MS } from './matching.service';
+import { CallStateService } from './call-state.service';
 import { LivekitService } from './livekit.service';
 import { EntitlementsService } from '../payments/entitlements.service';
 import { FriendsService } from '../friends/friends.service';
 import { PresenceService } from '../friends/presence.service';
 import { MessagesService } from '../friends/messages.service';
+import { BansService } from '../moderation/bans.service';
+import { clientIp, sanitizeDeviceId } from '../common/client-info';
+import { AuthService } from '../auth/auth.service';
 
 interface FindMatchPayload {
   preferredGender?: string;
@@ -33,27 +35,28 @@ interface Participant {
   country: string | null;
 }
 
+const MAX_MATCH_ATTEMPTS = 50; // each stale peer is removed from the queue, so this always ends
+const REMATCH_TICK_MS = 5000;
+
+const userRoom = (userId: string) => `user:${userId}`;
+
 /**
  * Signaling only. Media flows client <-> LiveKit SFU, never through here.
+ * All shared state (queue, active calls, pending calls, presence) lives in Redis, and
+ * Socket.IO uses the Redis adapter, so several API instances can run side by side.
  */
 @WebSocketGateway({ cors: { origin: process.env.FRONTEND_URL ?? 'http://localhost:5173' } })
-export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
   @WebSocketServer()
   server!: Server;
 
-  // socketId -> active call info. In-memory is fine single-instance;
-  // move to Redis when the API scales horizontally.
-  private readonly active = new Map<string, { sessionId: string; peerSocketId: string }>();
-  // callId -> pending direct (friend) call awaiting accept/decline.
-  private readonly pendingCalls = new Map<
-    string,
-    { callerUserId: string; callerSocketId: string; calleeUserId: string }
-  >();
+  private rematchTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     private readonly matching: MatchingService,
+    private readonly callState: CallStateService,
     private readonly livekit: LivekitService,
     private readonly entitlements: EntitlementsService,
     private readonly friends: FriendsService,
@@ -61,6 +64,15 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly messages: MessagesService,
     private readonly bans: BansService,
   ) {}
+
+  onModuleInit() {
+    this.rematchTimer = setInterval(() => void this.rematchTick().catch(() => undefined), REMATCH_TICK_MS);
+    this.rematchTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.rematchTimer) clearInterval(this.rematchTimer);
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -78,6 +90,8 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
         where: { id: payload.sub },
         data: { ...(deviceId ? { lastDeviceId: deviceId } : {}), ...(ip ? { lastIp: ip } : {}) },
       });
+      // Every tab/device joins the user's room, so direct emits reach all of them.
+      await client.join(userRoom(payload.sub));
       await this.presence.markOnline(payload.sub, client.id);
     } catch {
       client.disconnect(true);
@@ -88,9 +102,35 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     const userId = client.data.userId as string | undefined;
     if (userId) {
       await this.presence.markOffline(userId, client.id);
-      await this.matching.removeFromQueue(userId);
+      await this.matching.removeFromQueue(userId, client.id);
+      await this.dropPendingCallsBy(userId, client.id);
     }
     await this.endActiveCall(client);
+  }
+
+  private async isSocketAlive(socketId: string): Promise<boolean> {
+    const sockets = await this.server.in(socketId).fetchSockets();
+    return sockets.length > 0;
+  }
+
+  /**
+   * One active queue entry or call per user. A new tab takes over: the older tab's call/queue
+   * is ended and it is told with `session-replaced`.
+   */
+  private async takeOver(userId: string, client: Socket) {
+    const callSocketId = await this.callState.socketInCall(userId);
+    if (callSocketId) {
+      if (callSocketId === client.id) {
+        await this.endActiveCall(client); // client asked for a new match while still in a call
+      } else {
+        await this.endCallBySocketId(callSocketId);
+        this.server.to(callSocketId).emit('session-replaced');
+      }
+    }
+    const queued = await this.matching.getQueued(userId);
+    if (queued && queued.socketId !== client.id) {
+      this.server.to(queued.socketId).emit('session-replaced');
+    }
   }
 
   @SubscribeMessage('find-match')
@@ -124,6 +164,8 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
 
+    await this.takeOver(userId, client);
+
     const filtersAllowed = check.entitlement.filtersEnabled;
     const entry: QueueEntry = {
       userId,
@@ -136,7 +178,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       preferredCountry: filtersAllowed ? payload?.preferredCountry?.toUpperCase() ?? null : null,
     };
 
-    const peer = await this.matching.findOrQueue(entry);
+    const peer = await this.matchOrQueue(entry);
     if (!peer) {
       client.emit('searching');
       return;
@@ -147,6 +189,40 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       { userId: peer.userId, socketId: peer.socketId, displayName: peer.displayName, country: peer.country },
       { userId, socketId: client.id, displayName: user.displayName, country: user.country },
     );
+  }
+
+  /** Atomic claim, skipping peers whose socket has disappeared since they queued. */
+  private async matchOrQueue(entry: QueueEntry, keepQueuedAt = false): Promise<QueueEntry | null> {
+    for (let i = 0; i < MAX_MATCH_ATTEMPTS; i++) {
+      const peer = await this.matching.findOrQueue(entry, keepQueuedAt);
+      if (!peer) return null;
+      if (await this.isSocketAlive(peer.socketId)) return peer;
+    }
+    return null;
+  }
+
+  /**
+   * Waiting users with filters would otherwise only match when someone new arrives. Every few
+   * seconds, re-scan users whose filters have just relaxed (one instance at a time).
+   */
+  private async rematchTick() {
+    if (!(await this.matching.tryLock('rematch-tick', REMATCH_TICK_MS - 500))) return;
+    for (const waiting of await this.matching.staleWaiting()) {
+      const waitedMs = Date.now() - (waiting.queuedAt ?? Date.now());
+      const relaxedNow =
+        (!!waiting.preferredCountry && waitedMs >= RELAX_COUNTRY_MS && waitedMs < RELAX_COUNTRY_MS + REMATCH_TICK_MS) ||
+        (!!waiting.preferredGender && waitedMs >= RELAX_GENDER_MS && waitedMs < RELAX_GENDER_MS + REMATCH_TICK_MS);
+      if (relaxedNow) this.server.to(waiting.socketId).emit('filters-relaxed');
+
+      const peer = await this.matchOrQueue(waiting, true);
+      if (!peer) continue;
+      const me = await this.prisma.user.findUnique({ where: { id: waiting.userId } });
+      await this.startCall(
+        'match-found',
+        { userId: peer.userId, socketId: peer.socketId, displayName: peer.displayName, country: peer.country },
+        { userId: waiting.userId, socketId: waiting.socketId, displayName: me?.displayName ?? null, country: me?.country ?? null },
+      );
+    }
   }
 
   private canCall(user: { status: string; birthdate: Date | null }): boolean {
@@ -164,9 +240,12 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.emit('call-unavailable', { message: 'You can only call friends.' });
       return;
     }
-    const calleeSocketId = await this.presence.socketFor(friendUserId);
-    if (!calleeSocketId) {
+    if (!(await this.presence.isOnline(friendUserId))) {
       client.emit('call-unavailable', { message: 'Your friend is offline.' });
+      return;
+    }
+    if (await this.callState.socketInCall(friendUserId)) {
+      client.emit('call-unavailable', { message: 'Your friend is in another call.' });
       return;
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -174,15 +253,17 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.emit('call-unavailable', { message: 'Your account cannot place calls right now.' });
       return;
     }
+    await this.takeOver(userId, client);
+    await this.matching.removeFromQueue(userId);
     const callId = randomUUID();
-    this.pendingCalls.set(callId, {
+    await this.callState.addPending(callId, {
       callerUserId: userId,
       callerSocketId: client.id,
       calleeUserId: friendUserId,
     });
-    this.server.to(calleeSocketId).emit('incoming-call', {
+    this.server.to(userRoom(friendUserId)).emit('incoming-call', {
       callId,
-      from: { userId, displayName: user?.displayName ?? null },
+      from: { userId, displayName: user.displayName ?? null },
     });
   }
 
@@ -191,12 +272,25 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: Socket,
     @MessageBody() payload?: { callId?: string },
   ) {
-    const pending = this.pendingCalls.get(payload?.callId ?? '');
-    if (!pending || pending.calleeUserId !== client.data.userId) {
+    const callId = payload?.callId ?? '';
+    const peeked = await this.callState.peekPending(callId);
+    if (!peeked || peeked.calleeUserId !== client.data.userId) {
       client.emit('call-unavailable', { message: 'This call is no longer available.' });
       return;
     }
-    this.pendingCalls.delete(payload!.callId!);
+    // Single-use: if two tabs of the callee accept at once, only one wins.
+    const pending = await this.callState.takePending(callId);
+    if (!pending) {
+      client.emit('call-unavailable', { message: 'This call is no longer available.' });
+      return;
+    }
+    // Caller may have left or closed the tab since ringing.
+    if (!(await this.isSocketAlive(pending.callerSocketId))) {
+      client.emit('call-unavailable', { message: 'The caller is no longer available.' });
+      return;
+    }
+    // Other tabs of the callee stop ringing.
+    this.server.to(userRoom(pending.calleeUserId)).emit('call-cancelled', { callId });
 
     const [caller, callee] = await Promise.all([
       this.prisma.user.findUnique({ where: { id: pending.callerUserId } }),
@@ -207,6 +301,8 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
 
+    await this.takeOver(callee.id, client);
+    await this.matching.removeFromQueue(callee.id);
     await this.startCall(
       'call-started',
       { userId: caller.id, socketId: pending.callerSocketId, displayName: caller.displayName, country: caller.country },
@@ -215,10 +311,13 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   @SubscribeMessage('decline-call')
-  declineCall(@ConnectedSocket() client: Socket, @MessageBody() payload?: { callId?: string }) {
-    const pending = this.pendingCalls.get(payload?.callId ?? '');
-    if (!pending || pending.calleeUserId !== client.data.userId) return;
-    this.pendingCalls.delete(payload!.callId!);
+  async declineCall(@ConnectedSocket() client: Socket, @MessageBody() payload?: { callId?: string }) {
+    const callId = payload?.callId ?? '';
+    const peeked = await this.callState.peekPending(callId);
+    if (!peeked || peeked.calleeUserId !== client.data.userId) return;
+    const pending = await this.callState.takePending(callId);
+    if (!pending) return;
+    this.server.to(userRoom(pending.calleeUserId)).emit('call-cancelled', { callId });
     this.server.to(pending.callerSocketId).emit('call-declined');
   }
 
@@ -233,8 +332,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
         payload?.toUserId ?? '',
         payload?.content ?? '',
       );
-      const recipientSocket = await this.presence.socketFor(message.receiverId);
-      if (recipientSocket) this.server.to(recipientSocket).emit('new-message', message);
+      this.server.to(userRoom(message.receiverId)).emit('new-message', message);
       client.emit('message-sent', message);
     } catch (err) {
       client.emit('message-error', { message: (err as Error).message });
@@ -244,8 +342,19 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('leave')
   async leave(@ConnectedSocket() client: Socket) {
     const userId = client.data.userId as string | undefined;
-    if (userId) await this.matching.removeFromQueue(userId);
+    if (userId) {
+      await this.matching.removeFromQueue(userId, client.id);
+      await this.dropPendingCallsBy(userId, client.id);
+    }
     await this.endActiveCall(client);
+  }
+
+  /** Cancels ringing calls placed from this socket and tells the callee's tabs to stop ringing. */
+  private async dropPendingCallsBy(userId: string, socketId: string) {
+    const dropped = await this.callState.dropPendingByCaller(userId, socketId);
+    for (const call of dropped) {
+      this.server.to(userRoom(call.calleeUserId)).emit('call-cancelled', { callerUserId: userId });
+    }
   }
 
   /** Shared by random matches and direct friend calls. */
@@ -261,8 +370,8 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.livekit.createToken(roomName, b.userId, b.displayName),
     ]);
 
-    this.active.set(a.socketId, { sessionId: session.id, peerSocketId: b.socketId });
-    this.active.set(b.socketId, { sessionId: session.id, peerSocketId: a.socketId });
+    await this.callState.setActive(session.id, a, b);
+    await this.matching.recordPair(a.userId, b.userId);
 
     const url = this.livekit.url;
     this.server.to(a.socketId).emit(event, {
@@ -282,10 +391,13 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   private async endActiveCall(client: Socket) {
-    const info = this.active.get(client.id);
+    await this.endCallBySocketId(client.id);
+  }
+
+  private async endCallBySocketId(socketId: string) {
+    // Atomic: exactly one of the two sides (or two instances) ends the call and records usage.
+    const info = await this.callState.endBySocket(socketId);
     if (!info) return;
-    this.active.delete(client.id);
-    this.active.delete(info.peerSocketId);
     this.server.to(info.peerSocketId).emit('peer-left');
     await this.matching.closeSession(info.sessionId);
   }

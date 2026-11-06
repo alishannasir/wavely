@@ -1,5 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import Redis from 'ioredis';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS } from '../redis/redis.module';
 
@@ -13,63 +15,125 @@ export interface QueueEntry {
   preferredCountry: string | null;
   /** Shadow queue: flagged users only match other flagged users. */
   flagged?: boolean;
+  /** Set by the service (ms). Used for FIFO order and filter relaxation. */
+  queuedAt?: number;
 }
 
 const QUEUE_KEY = 'mm:queue';
+const ENTRY_TTL_SEC = 600;
+const RECENT_WINDOW_MS = 30 * 60 * 1000;
+const RECENT_KEEP = 20;
+const MAX_CALL_MS = 2 * 60 * 60 * 1000; // LiveKit token lifetime
+const SWEEP_EVERY_MS = 10 * 60 * 1000;
+
+export const RELAX_COUNTRY_MS = parseInt(process.env.MM_RELAX_COUNTRY_MS ?? '15000', 10);
+export const RELAX_GENDER_MS = parseInt(process.env.MM_RELAX_GENDER_MS ?? '30000', 10);
+
+const LUA = readFileSync(join(__dirname, 'lua', 'find-or-queue.lua'), 'utf8');
 
 @Injectable()
-export class MatchingService {
+export class MatchingService implements OnModuleInit, OnModuleDestroy {
+  private sweepTimer?: NodeJS.Timeout;
+
   constructor(
     @Inject(REDIS) private readonly redis: Redis,
     private readonly prisma: PrismaService,
-  ) {}
-
-  /** Both sides' filters must be satisfied (filters are null for free users). */
-  private compatible(a: QueueEntry, b: QueueEntry): boolean {
-    if (a.userId === b.userId) return false;
-    if (!!a.flagged !== !!b.flagged) return false;
-    const aOk =
-      (!a.preferredGender || b.gender === a.preferredGender) &&
-      (!a.preferredCountry || b.country === a.preferredCountry);
-    const bOk =
-      (!b.preferredGender || a.gender === b.preferredGender) &&
-      (!b.preferredCountry || a.country === b.preferredCountry);
-    return aOk && bOk;
+  ) {
+    this.redis.defineCommand('mmFindOrQueue', { numberOfKeys: 1, lua: LUA });
   }
 
-  /** Returns a compatible waiting peer, or queues the entry and returns null. */
-  async findOrQueue(entry: QueueEntry): Promise<QueueEntry | null> {
-    await this.removeFromQueue(entry.userId); // never queue the same user twice
-    const items = await this.redis.lrange(QUEUE_KEY, 0, -1);
-    for (const item of items) {
-      const candidate = JSON.parse(item) as QueueEntry;
-      if (this.compatible(entry, candidate)) {
-        // LREM returns 0 if another match already claimed this candidate (race guard).
-        const removed = await this.redis.lrem(QUEUE_KEY, 1, item);
-        if (removed > 0) return candidate;
-      }
+  onModuleInit() {
+    this.sweepTimer = setInterval(() => void this.sweepOrphans().catch(() => undefined), SWEEP_EVERY_MS);
+    this.sweepTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+  }
+
+  /**
+   * Atomically claims a compatible waiting peer, or queues the entry and returns null.
+   * Pass `keepQueuedAt` to re-scan for a user that is already waiting without losing their place.
+   */
+  async findOrQueue(entry: QueueEntry, keepQueuedAt = false): Promise<QueueEntry | null> {
+    const now = Date.now();
+    const withTime: QueueEntry = { ...entry, queuedAt: keepQueuedAt && entry.queuedAt ? entry.queuedAt : now };
+    const raw = await (this.redis as any).mmFindOrQueue(
+      QUEUE_KEY,
+      now,
+      JSON.stringify(withTime),
+      RELAX_COUNTRY_MS,
+      RELAX_GENDER_MS,
+      ENTRY_TTL_SEC,
+      RECENT_WINDOW_MS,
+    );
+    return raw ? (JSON.parse(raw) as QueueEntry) : null;
+  }
+
+  /** O(1). When socketId is given, only removes the entry if it belongs to that socket (multi-tab safe). */
+  async removeFromQueue(userId: string, socketId?: string): Promise<boolean> {
+    if (socketId) {
+      const raw = await this.redis.get(`mm:entry:${userId}`);
+      if (raw && (JSON.parse(raw) as QueueEntry).socketId !== socketId) return false;
     }
-    await this.redis.rpush(QUEUE_KEY, JSON.stringify(entry));
-    return null;
+    await this.redis.multi().zrem(QUEUE_KEY, userId).del(`mm:entry:${userId}`).exec();
+    return true;
   }
 
-  async removeFromQueue(userId: string): Promise<void> {
-    const items = await this.redis.lrange(QUEUE_KEY, 0, -1);
-    for (const item of items) {
-      if ((JSON.parse(item) as QueueEntry).userId === userId) {
-        await this.redis.lrem(QUEUE_KEY, 1, item);
-      }
+  async getQueued(userId: string): Promise<QueueEntry | null> {
+    const raw = await this.redis.get(`mm:entry:${userId}`);
+    return raw ? (JSON.parse(raw) as QueueEntry) : null;
+  }
+
+  /** Waiting entries older than the shortest relaxation window (candidates for a re-scan). */
+  async staleWaiting(): Promise<QueueEntry[]> {
+    const cutoff = Date.now() - Math.min(RELAX_COUNTRY_MS, RELAX_GENDER_MS);
+    const ids = await this.redis.zrangebyscore(QUEUE_KEY, '-inf', cutoff);
+    const out: QueueEntry[] = [];
+    for (const id of ids) {
+      const e = await this.getQueued(id);
+      if (e && (e.preferredCountry || e.preferredGender)) out.push(e);
     }
+    return out;
   }
 
-  /** Ends the session and records usage for both users (Phase 3 enforces caps). */
-  async closeSession(sessionId: string): Promise<void> {
+  async queueSize(): Promise<number> {
+    return this.redis.zcard(QUEUE_KEY);
+  }
+
+  /** Remember the pair so they are not matched again for a while. */
+  async recordPair(a: string, b: string): Promise<void> {
+    const now = Date.now();
+    const m = this.redis.multi();
+    for (const [x, y] of [[a, b], [b, a]]) {
+      const key = `mm:recent:${x}`;
+      m.zadd(key, now, y);
+      m.zremrangebyrank(key, 0, -(RECENT_KEEP + 1));
+      m.pexpire(key, RECENT_WINDOW_MS);
+    }
+    await m.exec();
+  }
+
+  /** Lightweight cross-instance lock so periodic jobs run on one instance at a time. */
+  async tryLock(name: string, ttlMs: number): Promise<boolean> {
+    return (await this.redis.set(`lock:${name}`, '1', 'PX', ttlMs, 'NX')) === 'OK';
+  }
+
+  /**
+   * Ends the session and records usage for both users (Phase 6 enforces caps).
+   * Safe to call from both sides concurrently: only the first caller records usage.
+   */
+  async closeSession(sessionId: string, endedAt = new Date()): Promise<void> {
     const session = await this.prisma.callSession.findUnique({ where: { id: sessionId } });
     if (!session || session.endedAt) return;
-    const endedAt = new Date();
-    await this.prisma.callSession.update({ where: { id: sessionId }, data: { endedAt } });
+    const capped = new Date(Math.min(endedAt.getTime(), session.startedAt.getTime() + MAX_CALL_MS));
+    const claimed = await this.prisma.callSession.updateMany({
+      where: { id: sessionId, endedAt: null },
+      data: { endedAt: capped },
+    });
+    if (claimed.count === 0) return;
 
-    const minutes = Math.max(1, Math.round((endedAt.getTime() - session.startedAt.getTime()) / 60_000));
+    const minutes = Math.max(1, Math.round((capped.getTime() - session.startedAt.getTime()) / 60_000));
     const date = new Date(new Date().toISOString().slice(0, 10)); // midnight UTC
     for (const userId of [session.userAId, session.userBId]) {
       await this.prisma.dailyUsage.upsert({
@@ -78,5 +142,17 @@ export class MatchingService {
         update: { minutesUsed: { increment: minutes }, matchesUsed: { increment: 1 } },
       });
     }
+  }
+
+  /** Closes sessions that never got a clean end (crash, lost sockets) once past the token lifetime. */
+  async sweepOrphans(): Promise<number> {
+    if (!(await this.tryLock('sweep-orphans', SWEEP_EVERY_MS - 1000))) return 0;
+    const stale = await this.prisma.callSession.findMany({
+      where: { endedAt: null, startedAt: { lt: new Date(Date.now() - MAX_CALL_MS - 5 * 60 * 1000) } },
+      select: { id: true },
+      take: 200,
+    });
+    for (const s of stale) await this.closeSession(s.id);
+    return stale.length;
   }
 }
