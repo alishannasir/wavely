@@ -5,6 +5,11 @@ import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { useAuth } from '../store/auth';
+import PageShell, { Card } from '../components/ui/PageShell';
+import ChunkyButton from '../components/ui/ChunkyButton';
+import Modal from '../components/ui/Modal';
+import FlagPill from '../components/ui/FlagPill';
+import { inputCls } from '../lib/ui';
 
 interface Friend {
   userId: string;
@@ -98,129 +103,76 @@ function FriendsInner() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col gap-6 p-6 max-w-md mx-auto">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Friends</h1>
-        <Link to="/home" className="text-sm text-zinc-400 hover:text-zinc-200">
-          Back home
-        </Link>
-      </header>
+    <PageShell>
+      <div className="mx-auto flex max-w-xl flex-col gap-5">
+        <h1 className="font-display text-3xl font-semibold text-brand">Friends</h1>
 
-      {requests && requests.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-semibold text-zinc-400">Friend requests</h2>
-          {requests.map((request) => (
-            <div
-              key={request.id}
-              className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/60 p-3"
-            >
-              <span>{request.from.displayName ?? 'Someone'}</span>
+        {requests && requests.length > 0 && (
+          <section className="flex flex-col gap-2" aria-label="Friend requests">
+            <h2 className="font-display text-lg text-muted">Friend requests</h2>
+            {requests.map((request) => (
+              <div key={request.id} className="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm">
+                <span className="font-semibold">{request.from.displayName ?? 'Someone'}</span>
+                <span className="flex gap-2">
+                  <ChunkyButton size="sm" onClick={() => accept(request.id)}>Accept</ChunkyButton>
+                  <ChunkyButton size="sm" variant="neutral" onClick={() => decline(request.id)}>Decline</ChunkyButton>
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
+
+        <section className="flex flex-col gap-2" aria-label="Your friends">
+          {friends && friends.length === 0 && (
+            <p className="rounded-2xl bg-white p-5 text-center text-muted shadow-sm">
+              No friends yet. Add people you meet in random chat!
+            </p>
+          )}
+          {friends?.map((friend) => (
+            <div key={friend.userId} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white p-3 shadow-sm">
+              <span className="flex items-center gap-2">
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${friend.online ? 'bg-emerald-500' : 'bg-line'}`}
+                  title={friend.online ? 'Online' : 'Offline'}
+                />
+                <span className="font-semibold">{friend.displayName ?? 'Friend'}</span>
+                {friend.country && <FlagPill country={friend.country} />}
+              </span>
               <span className="flex gap-2">
-                <button
-                  onClick={() => accept(request.id)}
-                  className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-3 py-1.5 text-sm font-semibold transition-colors"
-                >
-                  Accept
-                </button>
-                <button
-                  onClick={() => decline(request.id)}
-                  className="rounded-lg border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 text-sm transition-colors"
-                >
-                  Decline
-                </button>
+                <ChunkyButton size="sm" variant="neutral" onClick={() => setChatWith(friend)}>Chat</ChunkyButton>
+                <ChunkyButton size="sm" onClick={() => navigate(`/chat?friend=${friend.userId}`)} disabled={!friend.online}>Call</ChunkyButton>
+                <ChunkyButton size="sm" variant="neutral" onClick={() => remove(friend.userId)}>Remove</ChunkyButton>
               </span>
             </div>
           ))}
         </section>
-      )}
+      </div>
 
-      <section className="flex flex-col gap-2">
-        {friends && friends.length === 0 && (
-          <p className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-4 text-sm text-zinc-400">
-            No friends yet. Add people you meet in random chat!
-          </p>
-        )}
-        {friends?.map((friend) => (
-          <div
-            key={friend.userId}
-            className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/60 p-3"
-          >
-            <span className="flex items-center gap-2">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${friend.online ? 'bg-emerald-400' : 'bg-zinc-600'}`}
-              />
-              <span>{friend.displayName ?? 'Friend'}</span>
-              {friend.country && <span className="text-xs text-zinc-500">{friend.country}</span>}
-            </span>
-            <span className="flex gap-2">
-              <button
-                onClick={() => setChatWith(friend)}
-                className="rounded-lg border border-zinc-700 hover:border-zinc-500 px-3 py-1.5 text-sm transition-colors"
-              >
-                Chat
-              </button>
-              <button
-                onClick={() => navigate(`/call?friend=${friend.userId}`)}
-                disabled={!friend.online}
-                className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 px-3 py-1.5 text-sm font-semibold transition-colors disabled:opacity-40"
-              >
-                Call
-              </button>
-              <button
-                onClick={() => remove(friend.userId)}
-                className="rounded-lg border border-zinc-700 hover:border-red-400 px-3 py-1.5 text-sm transition-colors"
-              >
-                Remove
-              </button>
-            </span>
-          </div>
-        ))}
-      </section>
-
-      {chatWith && (
-        <div className="fixed inset-0 z-10 flex items-end justify-center bg-black/60">
-          <div className="w-full max-w-md h-[70vh] rounded-t-2xl bg-zinc-900 border border-zinc-700 flex flex-col">
-            <header className="flex items-center justify-between p-4 border-b border-zinc-800">
-              <strong>{chatWith.displayName ?? 'Friend'}</strong>
-              <button
-                onClick={() => setChatWith(null)}
-                className="text-sm text-zinc-400 hover:text-zinc-200"
-              >
-                Close
-              </button>
-            </header>
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-              {messages?.map((message) => (
-                <div
-                  key={message.id}
-                  className={`max-w-[75%] rounded-xl px-3 py-2 text-sm ${
-                    message.senderId === me?.id
-                      ? 'self-end bg-emerald-500 text-zinc-950'
-                      : 'self-start bg-zinc-800'
-                  }`}
-                >
-                  {message.content}
-                </div>
-              ))}
-              <div ref={bottomRef} />
+      <Modal open={Boolean(chatWith)} onClose={() => setChatWith(null)} labelledBy="dm-title" className="flex h-[70vh] max-w-md flex-col p-0">
+        <h2 id="dm-title" className="border-b border-line p-4 pr-12 font-display text-xl font-semibold text-brand">
+          {chatWith?.displayName ?? 'Friend'}
+        </h2>
+        <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
+          {messages?.map((message) => (
+            <div
+              key={message.id}
+              className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                message.senderId === me?.id ? 'self-end rounded-br-sm bg-brand text-white' : 'self-start rounded-bl-sm bg-surface-2'
+              }`}
+            >
+              {message.content}
             </div>
-            <form onSubmit={send} className="flex gap-2 p-4 border-t border-zinc-800">
-              <input
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="Message..."
-                className="flex-1 rounded-xl bg-zinc-950 border border-zinc-700 px-4 py-3 focus:outline-none focus:border-emerald-500"
-              />
-              <button className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-5 transition-colors">
-                Send
-              </button>
-            </form>
-          </div>
+          ))}
+          <div ref={bottomRef} />
         </div>
-      )}
+        <form onSubmit={send} className="flex gap-2 border-t border-line p-3">
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Message..." aria-label="Message" className={inputCls} />
+          <ChunkyButton disabled={!draft.trim()}>Send</ChunkyButton>
+        </form>
+      </Modal>
 
       <IncomingCallBanner />
-    </main>
+    </PageShell>
   );
 }
 
@@ -228,14 +180,14 @@ export default function Friends() {
   const isGuest = useAuth((s) => s.user?.isGuest);
   if (isGuest) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 max-w-md mx-auto text-center">
-        <h1 className="text-2xl font-bold">Friends need an account</h1>
-        <p className="text-zinc-400">Create a free account to add friends, message them and call them directly.</p>
-        <Link to="/signup" className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-6 py-3">
-          Create an account
-        </Link>
-        <Link to="/home" className="text-sm text-zinc-400">Back</Link>
-      </main>
+      <PageShell center>
+        <Card className="text-center">
+          <h1 className="mb-2 font-display text-2xl font-semibold text-brand">Friends need an account</h1>
+          <p className="mb-5 text-muted">Create a free account to add friends, message them and call them directly.</p>
+          <ChunkyButton to="/signup">Create an account</ChunkyButton>
+          <Link to="/chat" className="mt-4 block text-sm text-muted hover:text-ink">Back to chat</Link>
+        </Card>
+      </PageShell>
     );
   }
   return <FriendsInner />;
