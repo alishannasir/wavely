@@ -43,6 +43,7 @@ interface Participant {
 const MAX_MATCH_ATTEMPTS = 50; // each stale peer is removed from the queue, so this always ends
 const REMATCH_TICK_MS = 5000;
 const DEADLINE_TICK_MS = 5000;
+const PRESENCE_HEARTBEAT_MS = 30_000;
 const LIMIT_MESSAGE = 'You have used your free chat time for today. Upgrade for unlimited chat.';
 
 const userRoom = (userId: string) => `user:${userId}`;
@@ -61,6 +62,7 @@ export class MatchingGateway
 
   private rematchTimer?: NodeJS.Timeout;
   private deadlineTimer?: NodeJS.Timeout;
+  private presenceTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly jwt: JwtService,
@@ -81,11 +83,23 @@ export class MatchingGateway
     this.rematchTimer.unref();
     this.deadlineTimer = setInterval(() => void this.deadlineTick().catch(() => undefined), DEADLINE_TICK_MS);
     this.deadlineTimer.unref();
+    this.presenceTimer = setInterval(() => void this.presenceTick().catch(() => undefined), PRESENCE_HEARTBEAT_MS);
+    this.presenceTimer.unref();
+  }
+
+  /** Keeps presence alive for users connected to this instance; entries nobody refreshes expire. */
+  private async presenceTick() {
+    const ids: string[] = [];
+    for (const socket of this.server.sockets.sockets.values()) {
+      if (socket.data.userId) ids.push(socket.data.userId as string);
+    }
+    await this.presence.heartbeat(ids);
   }
 
   onModuleDestroy() {
     if (this.rematchTimer) clearInterval(this.rematchTimer);
     if (this.deadlineTimer) clearInterval(this.deadlineTimer);
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
   }
 
   /**

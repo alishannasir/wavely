@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -24,11 +25,13 @@ import { clientIp, sanitizeDeviceId } from '../common/client-info';
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('register')
   register(@Body() dto: RegisterDto, @Req() req: { country?: string | null }) {
     return this.auth.register(dto, req.country ?? null);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('guest')
   guest(@Body() _dto: GuestDto, @Req() req: any) {
     return this.auth.createGuest({
@@ -44,6 +47,7 @@ export class AuthController {
     return this.auth.upgradeGuest(req.user.userId, dto);
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto);
@@ -64,6 +68,7 @@ export class AuthController {
     res.redirect(`${frontend}/auth/callback?code=${code}`);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('exchange')
   exchange(@Body() dto: ExchangeDto) {
     return this.auth.exchangeLoginCode(dto.code);
