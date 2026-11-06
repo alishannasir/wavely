@@ -1,0 +1,6 @@
+# Dev image for docker-compose. Prisma's engines need OpenSSL, which Alpine does not ship.
+# Installing it here (once, at build time) means starting the container never needs the network
+# for it. The source is bind-mounted at /app by docker-compose.yml.
+FROM node:20-alpine
+RUN apk add --no-cache openssl
+WORKDIR /app
