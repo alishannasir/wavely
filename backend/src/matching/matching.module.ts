@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { requireJwtSecret } from '../config/jwt.config';
 import { JwtModule } from '@nestjs/jwt';
 import { MatchingGateway } from './matching.gateway';
+import { CallStateService } from './call-state.service';
 import { MatchingService } from './matching.service';
 import { LivekitService } from './livekit.service';
 import { ModerationModule } from '../moderation/moderation.module';
@@ -21,6 +22,6 @@ import { FriendsModule } from '../friends/friends.module';
     ModerationModule,
     FriendsModule,
   ],
-  providers: [MatchingGateway, MatchingService, LivekitService],
+  providers: [MatchingGateway, MatchingService, CallStateService, LivekitService],
 })
 export class MatchingModule {}

@@ -139,6 +139,14 @@ export default function Call() {
       setLimitMsg(payload?.message ?? 'You have reached your daily limit.');
     };
 
+    const onReplaced = () => {
+      // Another tab/device started a call or search for this account.
+      disconnectRoom();
+      navigate('/home');
+    };
+
+    const onRelaxed = () => setNotice('Still searching — widening your filters…');
+
     const onDeclined = () => {
       setNotice('Your friend declined the call.');
       setTimeout(() => navigate('/friends'), 1500);
@@ -153,6 +161,8 @@ export default function Call() {
     socket.on('call-started', onMatch);
     socket.on('peer-left', onPeerLeft);
     socket.on('match-error', onError);
+    socket.on('session-replaced', onReplaced);
+    socket.on('filters-relaxed', onRelaxed);
     socket.on('limit-reached', onLimitReached);
     socket.on('call-declined', onDeclined);
     socket.on('call-unavailable', onUnavailable);
@@ -163,6 +173,8 @@ export default function Call() {
       socket.off('call-started', onMatch);
       socket.off('peer-left', onPeerLeft);
       socket.off('match-error', onError);
+      socket.off('session-replaced', onReplaced);
+      socket.off('filters-relaxed', onRelaxed);
       socket.off('limit-reached', onLimitReached);
       socket.off('call-declined', onDeclined);
       socket.off('call-unavailable', onUnavailable);

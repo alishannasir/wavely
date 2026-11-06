@@ -14,9 +14,14 @@ export function useIncomingCall() {
   useEffect(() => {
     const socket = getSocket();
     const onIncoming = (payload: IncomingCall) => setCall(payload);
+    // The caller hung up, someone else answered, or another tab took the call.
+    const onCancelled = (payload: { callId?: string }) =>
+      setCall((current) => (!payload?.callId || current?.callId === payload.callId ? null : current));
     socket.on('incoming-call', onIncoming);
+    socket.on('call-cancelled', onCancelled);
     return () => {
       socket.off('incoming-call', onIncoming);
+      socket.off('call-cancelled', onCancelled);
     };
   }, []);
 
