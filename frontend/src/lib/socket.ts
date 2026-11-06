@@ -27,6 +27,13 @@ export function getSocket(): Socket {
   return socket;
 }
 
+// The socket authenticates once, with the token it was created with. Whenever the token changes
+// (login, logout, guest start, upgrade, expiry) the old socket must go, or the next user would
+// keep acting as the previous one.
+useAuth.subscribe((state, prev) => {
+  if (state.token !== prev.token) resetSocket();
+});
+
 export function resetSocket(): void {
   socket?.disconnect();
   socket = null;
