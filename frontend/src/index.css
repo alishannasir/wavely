@@ -22,8 +22,38 @@
   --c-warn: 180 83 9;
 }
 
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   @apply bg-page text-ink font-body antialiased;
+  overscroll-behavior-y: none; /* no pull-to-refresh bounce inside the app */
+}
+
+/* App-like touch behaviour */
+button,
+a,
+[role='button'] {
+  touch-action: manipulation;
+}
+
+/* iOS zooms the page when a focused field is smaller than 16px */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Phone notches / home indicator */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
 }
 
 h1,

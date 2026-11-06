@@ -2,6 +2,7 @@ import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Room } from 'livekit-client';
 import Logo from '../components/brand/Logo';
+import BottomNav from '../components/nav/BottomNav';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import FlagPill from '../components/ui/FlagPill';
 import StaticNoise from '../components/ui/StaticNoise';
@@ -556,19 +557,24 @@ export default function Chat() {
   const countryBtn = filters.preferredCountry ? flagEmoji(filters.preferredCountry) : '🌐';
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-page">
+    <div className={`flex h-[100dvh] flex-col bg-page ${phase === 'idle' ? '' : 'pb-safe'}`}>
       <div ref={audioRef} className="hidden" />
 
-      <header className="mx-auto flex w-full max-w-[1130px] items-center justify-between px-3 py-2 md:px-4">
+      <header className="pt-safe mx-auto flex w-full max-w-[1130px] items-center justify-between px-3 py-2 md:px-4">
         <Link to="/" aria-label="Home">
           <Logo size={30} />
         </Link>
         <nav className="flex items-center gap-4 font-display text-base">
-          {user.isGuest ? (
-            <Link to="/signup" className="text-brand hover:underline">Sign up</Link>
-          ) : (
-            <Link to="/friends" className="text-brand hover:underline">Friends</Link>
-          )}
+          {/* On phones these live in the bottom tab bar. */}
+          <span className="hidden items-center gap-5 md:flex">
+            {user.isGuest ? (
+              <Link to="/signup" className="text-brand hover:underline">Sign up</Link>
+            ) : (
+              <Link to="/friends" className="text-brand hover:underline">Friends</Link>
+            )}
+            <Link to="/upgrade" className="text-brand hover:underline">Premium</Link>
+            <Link to="/me" className="text-brand hover:underline">Profile</Link>
+          </span>
           <button onClick={() => setShowSettings(true)} aria-label="Settings" className="rounded-full p-1.5 text-muted hover:bg-white">
             <Icon path={GEAR} label="Settings" />
           </button>
@@ -760,6 +766,8 @@ export default function Chat() {
         />
       )}
       <IncomingCallBanner />
+      {/* App-style tabs on phones; hidden during a search or call so the video gets the space. */}
+      {phase === 'idle' && <BottomNav />}
     </div>
   );
 }

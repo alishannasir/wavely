@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useBillingStatus } from '../lib/billing';
 import { useAuth } from '../store/auth';
-import PageShell, { Card } from '../components/ui/PageShell';
+import AppShell from '../components/nav/AppShell';
+import { Card } from '../components/ui/PageShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
 
 const PLANS = [
@@ -48,7 +49,7 @@ function UpgradeInner() {
   }
 
   return (
-    <PageShell center>
+    <AppShell title="Premium">
       <Card className="max-w-lg">
         <h1 className="mb-4 text-center font-display text-3xl font-semibold text-brand">Go Premium</h1>
         <ul className="mb-6 flex flex-col gap-2">
@@ -88,7 +89,7 @@ function UpgradeInner() {
         {error && <p role="alert" className="mt-3 text-sm font-semibold text-danger">{error}</p>}
         <Link to="/chat" className="mt-5 block text-center text-sm text-muted hover:text-ink">Back to chat</Link>
       </Card>
-    </PageShell>
+    </AppShell>
   );
 }
 
@@ -96,13 +97,13 @@ export default function Upgrade() {
   const isGuest = useAuth((s) => s.user?.isGuest);
   if (isGuest) {
     return (
-      <PageShell center>
-        <Card className="text-center">
+      <AppShell title="Premium">
+        <Card className="mt-6 text-center">
           <h1 className="mb-2 font-display text-2xl font-semibold text-brand">Create an account first</h1>
           <p className="mb-5 text-muted">Premium needs a free account so your subscription is saved.</p>
           <ChunkyButton to="/signup">Create an account</ChunkyButton>
         </Card>
-      </PageShell>
+      </AppShell>
     );
   }
   return <UpgradeInner />;

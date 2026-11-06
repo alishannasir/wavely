@@ -3,8 +3,10 @@ const EU_COUNTRIES = [
   'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
 ];
 
+// GB is deliberately NOT allowed by default: the UK Online Safety Act requires robust age assurance
+// (not self-declaration). Add 'GB' via ALLOWED_COUNTRIES only once age verification is in place.
 export const DEFAULT_ALLOWED_COUNTRIES = [
-  'US', 'GB', 'CA', 'AU', 'NZ', // Western
+  'US', 'CA', 'AU', 'NZ', // Western
   'AE', 'SA', 'QA', 'KW', // Middle East whitelist
   ...EU_COUNTRIES,
 ];
