@@ -112,10 +112,30 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         },
       },
     });
-    if (duplicate) return { id: duplicate.id, status: duplicate.status };
-
     // The chat log comes from the server's own record of the call, never from the client.
     const chatLog = await this.chatLogFor(dto.sessionId, reporterId);
+
+    if (duplicate) {
+      // A person's own report must not be lost behind an earlier automatic one for the same call:
+      // upgrade it (the reporter's reason + evidence win over the classifier's guess).
+      if (!meta && duplicate.source === 'AUTO_NSFW') {
+        const evidenceImage = dto.evidenceImage ?? duplicate.evidenceImage;
+        await this.prisma.report.update({
+          where: { id: duplicate.id },
+          data: {
+            source: 'USER',
+            reasonCode: dto.reasonCode,
+            evidenceImage,
+            chatLog: chatLog.length ? (chatLog as any) : undefined,
+            evidenceExpiresAt:
+              evidenceImage || chatLog.length ? new Date(Date.now() + retentionDays() * DAY_MS) : null,
+          },
+        });
+        await this.maybeFlag(dto.reportedUserId);
+        await this.maybeAutoSuspend(dto.reportedUserId);
+      }
+      return { id: duplicate.id, status: duplicate.status };
+    }
 
     const report = await this.prisma.report.create({
       data: {
@@ -181,6 +201,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       where: {
         reportedUserId,
         status: 'OPEN',
+        // Only reports filed by people can suspend. The on-device classifier (AUTO_NSFW) can flag a
+        // user into the shadow queue, but it makes mistakes and can be spoofed, so a moderator decides.
+        source: 'USER',
         reasonCode: { in: SEVERE_REASONS as any },
         createdAt: { gte: new Date(Date.now() - WINDOW_MS) },
         reporter: { createdAt: { lte: new Date(Date.now() - MIN_REPORTER_ACCOUNT_AGE_MS) } },
