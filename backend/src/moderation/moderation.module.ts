@@ -19,6 +19,6 @@ import { AdminBootstrapService } from './admin-bootstrap.service';
     AdminBootstrapService,
     { provide: APP_GUARD, useClass: BanGuard },
   ],
-  exports: [BansService, ReportsService],
+  exports: [BansService, ReportsService, AuditService],
 })
 export class ModerationModule {}

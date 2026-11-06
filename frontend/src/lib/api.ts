@@ -19,7 +19,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     window.location.assign('/unavailable');
     throw new Error('Region blocked');
   }
-  if (res.status === 401 && token && !path.startsWith('/auth/')) {
+  if (res.status === 401 && token && !path.startsWith('/auth/') && !path.startsWith('/appeals')) {
     // Expired or revoked session (guest tokens last 4h): start over from the landing page.
     useAuth.getState().logout();
     window.location.assign('/');
@@ -27,6 +27,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   if (!res.ok) {
     const message = Array.isArray(body?.message) ? body.message.join(', ') : body?.message;
+    if (res.status === 429 && !message?.includes(' ')) throw new Error('Too many requests. Please wait a minute and try again.');
     throw new Error(message ?? `Request failed (${res.status})`);
   }
   return body as T;

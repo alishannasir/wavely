@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import Logo from '../../components/brand/Logo';
 import { adminApi } from '../../lib/admin';
+import { api } from '../../lib/api';
 import { useAuth } from '../../store/auth';
 
 export const Badge = ({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'danger' | 'warn' | 'brand' | 'ok' }) => {
@@ -21,6 +22,7 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
   const allowed = user?.role === 'MODERATOR' || user?.role === 'ADMIN';
+  const { data: appealCount } = useQuery({ queryKey: ['admin-appeal-count'], queryFn: () => api<{ open: number }>('/admin/appeals/count'), enabled: allowed, refetchInterval: 30_000 });
   const { data: counts } = useQuery({ queryKey: ['admin-counts'], queryFn: adminApi.counts, enabled: allowed, refetchInterval: 30_000 });
 
   if (!allowed) {
@@ -53,6 +55,15 @@ export default function AdminLayout() {
                     <span className={`ml-1 rounded-full px-1.5 text-xs font-bold ${isActive ? 'bg-white text-brand' : 'bg-danger text-white'}`}>
                       {counts.open + counts.reviewing}
                     </span>
+                  )}
+                </>
+              )}
+            </NavLink>
+            <NavLink to="/admin/appeals" className={tab}>
+              {({ isActive }) => (
+                <>
+                  Appeals{appealCount && appealCount.open > 0 && (
+                    <span className={`ml-1 rounded-full px-1.5 text-xs font-bold ${isActive ? 'bg-white text-brand' : 'bg-danger text-white'}`}>{appealCount.open}</span>
                   )}
                 </>
               )}

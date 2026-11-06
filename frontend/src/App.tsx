@@ -12,6 +12,8 @@ const Profile = lazy(() => import('./pages/Profile'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminQueue = lazy(() => import('./pages/admin/Queue'));
 const AdminReport = lazy(() => import('./pages/admin/ReportDetail'));
+const Appeal = lazy(() => import('./pages/Appeal'));
+const AdminAppeals = lazy(() => import('./pages/admin/Appeals'));
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
 const AdminUser = lazy(() => import('./pages/admin/UserDetail'));
 const AdminAudit = lazy(() => import('./pages/admin/Audit').then((m) => ({ default: m.default })));
@@ -62,10 +64,12 @@ export default function App() {
           <Route path="/chat" element={<Chat />} />
           <Route path="/start" element={<ToChat />} />
           <Route path="/call" element={<ToChat />} />
+          <Route path="/appeal" element={<Appeal />} />
           <Route path="/me" element={<Profile />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminQueue />} />
             <Route path="reports/:id" element={<AdminReport />} />
+            <Route path="appeals" element={<AdminAppeals />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="users/:id" element={<AdminUser />} />
             <Route path="audit" element={<AdminAudit />} />
