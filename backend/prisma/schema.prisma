@@ -177,6 +177,9 @@ model Report {
   evidenceImage  String?       @db.Text
   chatLog        Json?
   evidenceExpiresAt DateTime?
+  // USER = filed by a person, AUTO_NSFW = raised by the viewer's on-device classifier.
+  source         String        @default("USER")
+  nsfwScore      Float?
   reporter       User         @relation("ReportReporter", fields: [reporterId], references: [id])
   reported       User         @relation("ReportReported", fields: [reportedUserId], references: [id])
   session        CallSession? @relation(fields: [sessionId], references: [id])

@@ -21,6 +21,8 @@ const SEVERE_REASONS = ['NUDITY', 'MINOR_CONCERN'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WINDOW_MS = DAY_MS;
 const FLAG_THRESHOLD = 3;
+const AUTO_REPORTS_PER_HOUR = 30;
+const EVIDENCE_IMAGE_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
 
 function retentionDays(): number {
   const n = parseInt(process.env.EVIDENCE_RETENTION_DAYS ?? '30', 10);
@@ -54,7 +56,35 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async create(reporterId: string, dto: CreateReportDto) {
+  /**
+   * Automatic report raised by the viewer's on-device NSFW classifier. It goes through the same
+   * checks as a manual report (real session, one per reporter/target/session, rate limit), so a
+   * modified client cannot do more damage than a malicious reporter could.
+   */
+  async createAutoNsfw(
+    reporterId: string,
+    peerUserId: string,
+    sessionId: string,
+    score: number,
+    evidenceImage?: string,
+  ) {
+    return this.create(
+      reporterId,
+      {
+        reportedUserId: peerUserId,
+        sessionId,
+        reasonCode: 'NUDITY',
+        evidenceImage: EVIDENCE_IMAGE_RE.test(evidenceImage ?? '') && (evidenceImage?.length ?? 0) <= 600_000 ? evidenceImage : undefined,
+      },
+      { source: 'AUTO_NSFW', nsfwScore: Math.min(1, Math.max(0, score)) },
+    );
+  }
+
+  async create(
+    reporterId: string,
+    dto: CreateReportDto,
+    meta?: { source: 'AUTO_NSFW'; nsfwScore: number },
+  ) {
     if (reporterId === dto.reportedUserId) {
       throw new BadRequestException('You cannot report yourself');
     }
@@ -66,10 +96,10 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Invalid session for this report');
     }
 
-    const key = `report:rl:${reporterId}`;
+    const key = `report:rl:${meta ? 'auto:' : ''}${reporterId}`;
     const count = await this.redis.incr(key);
     if (count === 1) await this.redis.expire(key, 3600);
-    if (count > REPORTS_PER_HOUR) {
+    if (count > (meta ? AUTO_REPORTS_PER_HOUR : REPORTS_PER_HOUR)) {
       throw new HttpException('Too many reports, try again later', HttpStatus.TOO_MANY_REQUESTS);
     }
 
@@ -90,6 +120,8 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         reportedUserId: dto.reportedUserId,
         sessionId: dto.sessionId,
         reasonCode: dto.reasonCode,
+        source: meta?.source ?? 'USER',
+        nsfwScore: meta?.nsfwScore,
         evidenceImage: dto.evidenceImage,
         chatLog: dto.chatLog as any,
         evidenceExpiresAt:
@@ -164,6 +196,8 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         status: true,
         createdAt: true,
         sessionId: true,
+        source: true,
+        nsfwScore: true,
         evidenceExpiresAt: true,
         reported: { select: { id: true, displayName: true, status: true, country: true, flaggedUntil: true } },
         reporter: { select: { id: true, displayName: true, createdAt: true } },

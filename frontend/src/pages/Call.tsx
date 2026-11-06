@@ -1,4 +1,5 @@
 import { captureFrame } from '../lib/evidence';
+import { NsfwScanner } from '../lib/nsfw';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Room } from 'livekit-client';
@@ -52,11 +53,21 @@ export default function Call() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLDivElement>(null);
+  const scannerRef = useRef<NsfwScanner | null>(null);
+  const flaggedSessionRef = useRef<string | null>(null);
+  const [blurred, setBlurred] = useState(false);
+
+  const stopScanner = useCallback(() => {
+    scannerRef.current?.stop();
+    scannerRef.current = null;
+    setBlurred(false);
+  }, []);
 
   const disconnectRoom = useCallback(async () => {
+    stopScanner();
     await roomRef.current?.disconnect();
     roomRef.current = null;
-  }, []);
+  }, [stopScanner]);
 
   const start = useCallback(() => {
     setState('searching');
@@ -82,6 +93,29 @@ export default function Call() {
     }
     const socket = getSocket();
 
+    const startScanner = () => {
+      scannerRef.current?.stop();
+      const scanner = new NsfwScanner({
+        getVideo: () => remoteVideoRef.current,
+        onExplicit: (score) => {
+          setBlurred(true);
+          const session = sessionRef.current;
+          // One automatic flag per call: the server turns it into a moderator report with this frame.
+          if (session && flaggedSessionRef.current !== session.sessionId) {
+            flaggedSessionRef.current = session.sessionId;
+            socket.emit('nsfw-flag', {
+              sessionId: session.sessionId,
+              score,
+              evidenceImage: captureFrame(remoteVideoRef.current),
+            });
+          }
+        },
+        onClear: () => setBlurred(false),
+      });
+      scannerRef.current = scanner;
+      void scanner.start();
+    };
+
     const onMatch = async (payload: MatchPayload) => {
       sessionRef.current = payload;
       setPeer(payload.peer);
@@ -93,6 +127,7 @@ export default function Call() {
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
           track.attach(remoteVideoRef.current);
+          startScanner();
         } else if (track.kind === Track.Kind.Audio && audioRef.current) {
           audioRef.current.appendChild(track.attach());
         }
@@ -259,7 +294,26 @@ export default function Call() {
       <div ref={audioRef} className="hidden" />
 
       <div className="relative flex-1 overflow-hidden">
-        <video ref={remoteVideoRef} autoPlay playsInline className="h-full w-full object-cover" />
+        <video
+          ref={remoteVideoRef}
+          autoPlay
+          playsInline
+          className={`h-full w-full object-cover transition-[filter] ${blurred ? 'blur-3xl' : ''}`}
+        />
+        {blurred && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/40 p-6 text-center">
+            <p className="text-lg font-semibold">Video hidden: possible explicit content</p>
+            <p className="text-sm text-zinc-300">It was sent to our moderators. You can skip or show it anyway.</p>
+            <span className="flex gap-3">
+              <button onClick={() => (isDirect ? end() : skip())} className="rounded-xl bg-emerald-500 px-5 py-2 font-semibold text-zinc-950">
+                {isDirect ? 'End call' : 'Next'}
+              </button>
+              <button onClick={() => setBlurred(false)} className="rounded-xl border border-zinc-500 px-5 py-2">
+                Show anyway
+              </button>
+            </span>
+          </div>
+        )}
 
         {state !== 'in-call' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-zinc-950/80">
