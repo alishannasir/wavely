@@ -71,6 +71,38 @@ d('matching (redis)', () => {
     expect((await svc.findOrQueue(entry('b', { country: 'US' })))?.userId).toBe('a');
   });
 
+  it('a re-scan of a user who already left does not re-queue them (no ghost entries)', async () => {
+    const stale = entry('u', { queuedAt: Date.now() - 20_000, preferredCountry: 'GB' });
+    // u is NOT in the queue (they left / were matched) but a stale snapshot still holds their entry
+    expect(await svc.findOrQueue(stale, { keepQueuedAt: true, requireWaiting: true })).toBeNull();
+    expect(await svc.queueSize()).toBe(0);
+    expect(await svc.getQueued('u')).toBeNull();
+  });
+
+  it('a re-scan of a user who is still waiting keeps their place and can claim a peer', async () => {
+    await svc.findOrQueue(entry('older', { country: 'GB' })); // waiting, will be claimed
+    const u = entry('u', { preferredCountry: 'GB' });
+    await redis.set('mm:entry:u', JSON.stringify({ ...u, queuedAt: 1000 }), 'EX', 60);
+    await redis.zadd('mm:queue', 1000, 'u');
+    const peer = await svc.findOrQueue({ ...u, queuedAt: 1000 }, { keepQueuedAt: true, requireWaiting: true });
+    expect(peer?.userId).toBe('older');
+    expect(await svc.getQueued('u')).toBeNull(); // u is now matched, not queued
+  });
+
+  it('a re-scan with no peer leaves the user queued at the original time', async () => {
+    const u = entry('u', { preferredCountry: 'GB' });
+    await redis.set('mm:entry:u', JSON.stringify({ ...u, queuedAt: 5000 }), 'EX', 60);
+    await redis.zadd('mm:queue', 5000, 'u');
+    expect(await svc.findOrQueue({ ...u, queuedAt: 5000 }, { keepQueuedAt: true, requireWaiting: true })).toBeNull();
+    expect(await redis.zscore('mm:queue', 'u')).toBe('5000');
+  });
+
+  it('enqueueOnly puts a user back without scanning', async () => {
+    await svc.findOrQueue(entry('a'));
+    await svc.enqueueOnly(entry('b'));
+    expect(await svc.queueSize()).toBe(2); // b did not claim a
+  });
+
   it('drops expired queue entries', async () => {
     await redis.zadd('mm:queue', Date.now(), 'ghost'); // no entry hash
     expect(await svc.findOrQueue(entry('a'))).toBeNull();

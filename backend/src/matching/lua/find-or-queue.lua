@@ -6,6 +6,8 @@
 -- ARGV[4] = ms before a gender preference is ignored
 -- ARGV[5] = entry TTL (seconds)
 -- ARGV[6] = recent-partner window (ms)
+-- ARGV[7] = '1' when re-scanning a user who should still be waiting: if they are no longer in the
+--           queue (left, matched elsewhere) nothing is claimed and they are NOT re-queued.
 -- Returns the claimed peer's entry JSON, or false after queueing the searcher.
 local queue = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -14,6 +16,7 @@ local relaxCountry = tonumber(ARGV[3])
 local relaxGender = tonumber(ARGV[4])
 local ttl = tonumber(ARGV[5])
 local recentWindow = tonumber(ARGV[6])
+local rescan = ARGV[7] == '1'
 
 local function prefs(e)
   local waited = now - (tonumber(e.queuedAt) or now)
@@ -37,6 +40,10 @@ local function wants(a, b)
 end
 
 local function flagged(e) return e.flagged == true end
+
+if rescan and not redis.call('ZSCORE', queue, me.userId) then
+  return false
+end
 
 -- Never queue the same user twice.
 redis.call('ZREM', queue, me.userId)

@@ -53,9 +53,14 @@ export class MatchingService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Atomically claims a compatible waiting peer, or queues the entry and returns null.
-   * Pass `keepQueuedAt` to re-scan for a user that is already waiting without losing their place.
+   * Re-scan a user who is already waiting: `keepQueuedAt` keeps their place in line, and
+   * `requireWaiting` makes the call a no-op (no claim, no re-queue) if they have since left or been
+   * matched, so a stale re-scan can never resurrect a ghost entry.
    */
-  async findOrQueue(entry: QueueEntry, keepQueuedAt = false): Promise<QueueEntry | null> {
+  async findOrQueue(
+    entry: QueueEntry,
+    { keepQueuedAt = false, requireWaiting = false }: { keepQueuedAt?: boolean; requireWaiting?: boolean } = {},
+  ): Promise<QueueEntry | null> {
     const now = Date.now();
     const withTime: QueueEntry = { ...entry, queuedAt: keepQueuedAt && entry.queuedAt ? entry.queuedAt : now };
     const raw = await (this.redis as any).mmFindOrQueue(
@@ -66,8 +71,22 @@ export class MatchingService implements OnModuleInit, OnModuleDestroy {
       RELAX_GENDER_MS,
       ENTRY_TTL_SEC,
       RECENT_WINDOW_MS,
+      requireWaiting ? '1' : '0',
     );
     return raw ? (JSON.parse(raw) as QueueEntry) : null;
+  }
+
+  /**
+   * Puts the entry in the queue without looking for a partner (used when every claimed peer turned
+   * out to be unusable). Keeps the original place in line when the entry has a queuedAt.
+   */
+  async enqueueOnly(entry: QueueEntry): Promise<void> {
+    const queuedAt = entry.queuedAt ?? Date.now();
+    await this.redis
+      .multi()
+      .set(`mm:entry:${entry.userId}`, JSON.stringify({ ...entry, queuedAt }), 'EX', ENTRY_TTL_SEC)
+      .zadd(QUEUE_KEY, queuedAt, entry.userId)
+      .exec();
   }
 
   /** O(1). When socketId is given, only removes the entry if it belongs to that socket (multi-tab safe). */
