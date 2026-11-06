@@ -53,9 +53,12 @@ local recent = {}
 local recentIds = redis.call('ZRANGEBYSCORE', 'mm:recent:' .. me.userId, now - recentWindow, '+inf')
 for _, id in ipairs(recentIds) do recent[id] = true end
 
+-- Blocks are mirrored into mm:block:<userId> (both directions), see BlocksService.
+local blockKey = 'mm:block:' .. me.userId
+
 local ids = redis.call('ZRANGE', queue, 0, -1)
 for _, id in ipairs(ids) do
-  if id ~= me.userId and not recent[id] then
+  if id ~= me.userId and not recent[id] and redis.call('SISMEMBER', blockKey, id) == 0 then
     local raw = redis.call('GET', 'mm:entry:' .. id)
     if not raw then
       redis.call('ZREM', queue, id) -- expired entry

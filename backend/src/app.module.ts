@@ -8,6 +8,7 @@ import { MatchingModule } from './matching/matching.module';
 import { FriendsModule } from './friends/friends.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ModerationModule } from './moderation/moderation.module';
+import { BlocksModule } from './blocks/blocks.module';
 import { GeoMiddleware } from './common/geo/geo.middleware';
 import { GeoGuard } from './common/geo/geo.guard';
 import { APP_GUARD } from '@nestjs/core';
@@ -28,6 +29,7 @@ import { HealthController } from './health/health.controller';
     FriendsModule,
     PaymentsModule,
     ModerationModule,
+    BlocksModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -9,7 +9,7 @@ import StaticNoise from '../components/ui/StaticNoise';
 import VolumePill from '../components/ui/VolumePill';
 import RulesModal from '../components/RulesModal';
 import ChatPanel, { ChatMsg } from '../components/chat/ChatPanel';
-import { FiltersModal, GenderModal, LimitModal, ReportSheet, SettingsModal, genderEmoji } from '../components/chat/modals';
+import { BlockSheet, FiltersModal, GenderModal, LimitModal, ReportSheet, SettingsModal, genderEmoji } from '../components/chat/modals';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { OnlineCount } from '../lib/online';
 import { captureFrame } from '../lib/evidence';
@@ -93,6 +93,7 @@ export default function Chat() {
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
+  const [showBlock, setShowBlock] = useState(false);
   const [showRules, setShowRules] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showGender, setShowGender] = useState(false);
@@ -469,6 +470,21 @@ export default function Chat() {
     }
   }
 
+  /** Block the person you are talking to, then move on. */
+  async function blockPeer() {
+    const session = sessionRef.current;
+    setShowBlock(false);
+    if (!session) return;
+    try {
+      await api('/blocks', { method: 'POST', body: JSON.stringify({ userId: session.peer.userId }) });
+      addMsg({ kind: 'bot', text: 'Blocked. You will not be matched with this person again.' });
+    } catch (err) {
+      addMsg({ kind: 'bot', text: (err as Error).message });
+    }
+    if (isDirect) await stop();
+    else await next();
+  }
+
   async function report(reasonCode: string) {
     const session = sessionRef.current;
     setShowReport(false);
@@ -634,6 +650,12 @@ export default function Chat() {
                       {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} left
                     </span>
                   )}
+                  <button
+                    onClick={() => setShowBlock(true)}
+                    className="rounded-full bg-stage/70 px-3 py-1.5 text-sm font-semibold text-white backdrop-blur hover:bg-stage/90"
+                  >
+                    Block
+                  </button>
                   {!isDirect && !user.isGuest && (
                     <button
                       onClick={addFriend}
@@ -743,6 +765,7 @@ export default function Chat() {
         </div>
       </main>
 
+      <BlockSheet open={showBlock} name={peer?.displayName ?? 'this person'} onClose={() => setShowBlock(false)} onConfirm={() => void blockPeer()} />
       <ReportSheet open={showReport} onClose={() => setShowReport(false)} onPick={(code) => void report(code)} />
       <FiltersModal open={showFilters} onClose={() => setShowFilters(false)} filtersEnabled={filtersEnabled} />
       <GenderModal open={showGender} onClose={() => setShowGender(false)} />

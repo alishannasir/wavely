@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PresenceService } from './presence.service';
+import { BlocksService } from '../blocks/blocks.service';
 
 @Injectable()
 export class FriendsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly presence: PresenceService,
+    private readonly blocks: BlocksService,
   ) {}
 
   async areFriends(userA: string, userB: string): Promise<boolean> {
@@ -33,6 +35,8 @@ export class FriendsService {
 
     const target = await this.prisma.user.findUnique({ where: { id: toId } });
     if (!target || target.status !== 'ACTIVE') throw new NotFoundException('User not found');
+    // Do not reveal who blocked whom.
+    if (await this.blocks.isBlockedEitherWay(fromId, toId)) throw new ForbiddenException('You cannot add this person');
 
     // Friend requests are only allowed between people who have actually matched.
     const sharedSession = await this.prisma.callSession.findFirst({

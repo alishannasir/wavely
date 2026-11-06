@@ -2,7 +2,7 @@ import { ReactNode, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AppShell from '../components/nav/AppShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
-import { FiltersModal, GenderModal, SettingsModal, genderEmoji } from '../components/chat/modals';
+import { BlockedModal, FiltersModal, GenderModal, SettingsModal, genderEmoji } from '../components/chat/modals';
 import { useBillingStatus } from '../lib/billing';
 import { flagEmoji } from '../lib/flag';
 import { useAuth } from '../store/auth';
@@ -39,6 +39,7 @@ export default function Profile() {
   const [showGender, setShowGender] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showDevices, setShowDevices] = useState(false);
+  const [showBlocked, setShowBlocked] = useState(false);
 
   if (!user) {
     navigate('/');
@@ -74,6 +75,7 @@ export default function Profile() {
           <Row label="I am" value={<span className="text-xl">{genderEmoji(user.gender)}</span>} onClick={() => setShowGender(true)} />
           <Row label="Country filter" value={filters.preferredCountry ? `${flagEmoji(filters.preferredCountry)} ${filters.preferredCountry}` : 'Anywhere'} onClick={() => setShowFilters(true)} />
           <Row label="Camera & microphone" onClick={() => setShowDevices(true)} />
+          <Row label="Blocked people" onClick={() => setShowBlocked(true)} />
         </Group>
 
         {(user.role === 'MODERATOR' || user.role === 'ADMIN') && (
@@ -107,6 +109,7 @@ export default function Profile() {
 
       <GenderModal open={showGender} onClose={() => setShowGender(false)} />
       <FiltersModal open={showFilters} onClose={() => setShowFilters(false)} filtersEnabled={Boolean(billing?.filtersEnabled) && !user.isGuest} />
+      <BlockedModal open={showBlocked} onClose={() => setShowBlocked(false)} />
       <SettingsModal open={showDevices} onClose={() => setShowDevices(false)} onDevicesChanged={() => undefined} />
     </AppShell>
   );
