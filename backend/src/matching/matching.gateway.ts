@@ -22,6 +22,7 @@ import { MessagesService } from '../friends/messages.service';
 import { BansService } from '../moderation/bans.service';
 import { clientIp, sanitizeDeviceId } from '../common/client-info';
 import { AuthService } from '../auth/auth.service';
+import { isCountryAllowed, resolveCountry } from '../common/geo/geo.config';
 
 interface FindMatchPayload {
   preferredGender?: string;
@@ -86,10 +87,17 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
         return;
       }
       client.data.userId = payload.sub;
-      await this.prisma.user.update({
+      const country = resolveCountry(client.handshake.headers);
+      if (!isCountryAllowed(country)) {
+        client.emit('match-error', { code: 'REGION_BLOCKED', message: 'This service is not available in your region.' });
+        client.disconnect(true);
+        return;
+      }
+      const me = await this.prisma.user.update({
         where: { id: payload.sub },
         data: { ...(deviceId ? { lastDeviceId: deviceId } : {}), ...(ip ? { lastIp: ip } : {}) },
       });
+      client.data.isGuest = me.isGuest;
       // Every tab/device joins the user's room, so direct emits reach all of them.
       await client.join(userRoom(payload.sub));
       await this.presence.markOnline(payload.sub, client.id);
@@ -149,7 +157,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
     // 18+ gate: OAuth signups without a birthdate must finish onboarding first.
-    if (!user.birthdate || AuthService.ageOf(user.birthdate) < 18) {
+    if (!AuthService.isAdultUser(user)) {
       client.emit('match-error', {
         code: 'AGE_REQUIRED',
         message: 'Please confirm you are 18 or older before matching.',
@@ -166,7 +174,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     await this.takeOver(userId, client);
 
-    const filtersAllowed = check.entitlement.filtersEnabled;
+    const filtersAllowed = check.entitlement.filtersEnabled && !user.isGuest;
     const entry: QueueEntry = {
       userId,
       socketId: client.id,
@@ -225,8 +233,8 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
   }
 
-  private canCall(user: { status: string; birthdate: Date | null }): boolean {
-    return user.status === 'ACTIVE' && !!user.birthdate && AuthService.ageOf(user.birthdate) >= 18;
+  private canCall(user: { status: string; birthdate: Date | null; adultAttestedAt?: Date | null; isGuest?: boolean }): boolean {
+    return user.status === 'ACTIVE' && AuthService.isAdultUser(user);
   }
 
   @SubscribeMessage('call-friend')
@@ -235,6 +243,10 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @MessageBody() payload?: { friendUserId?: string },
   ) {
     const userId = client.data.userId as string;
+    if (client.data.isGuest) {
+      client.emit('call-unavailable', { message: 'Create a free account to call friends.' });
+      return;
+    }
     const friendUserId = payload?.friendUserId;
     if (!friendUserId || !(await this.friends.areFriends(userId, friendUserId))) {
       client.emit('call-unavailable', { message: 'You can only call friends.' });
@@ -326,6 +338,10 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() client: Socket,
     @MessageBody() payload?: { toUserId?: string; content?: string },
   ) {
+    if (client.data.isGuest) {
+      client.emit('message-error', { message: 'Create a free account to send messages.' });
+      return;
+    }
     try {
       const message = await this.messages.create(
         client.data.userId as string,

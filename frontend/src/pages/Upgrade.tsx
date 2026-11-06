@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useBillingStatus } from '../lib/billing';
+import { useAuth } from '../store/auth';
 
 const PLANS = [
   { code: 'MONTHLY', name: 'Monthly', price: '$9.99/mo', blurb: 'Billed monthly. Cancel anytime.' },
@@ -10,7 +11,7 @@ const PLANS = [
 
 const PERKS = ['No ads', 'Unlimited chat time and matches', 'Gender and country filters'];
 
-export default function Upgrade() {
+function UpgradeInner() {
   const { data: billing } = useBillingStatus();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -93,4 +94,20 @@ export default function Upgrade() {
       </Link>
     </main>
   );
+}
+
+export default function Upgrade() {
+  const isGuest = useAuth((s) => s.user?.isGuest);
+  if (isGuest) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 max-w-md mx-auto text-center">
+        <h1 className="text-2xl font-bold">Create an account first</h1>
+        <p className="text-zinc-400">Premium needs a free account so your subscription is saved.</p>
+        <Link to="/signup" className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-6 py-3">
+          Create an account
+        </Link>
+      </main>
+    );
+  }
+  return <UpgradeInner />;
 }

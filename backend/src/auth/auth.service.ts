@@ -1,5 +1,10 @@
 import {
+  BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
+  OnModuleDestroy,
+  OnModuleInit,
   ForbiddenException,
   Injectable,
   UnauthorizedException,
@@ -14,8 +19,14 @@ import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { UpgradeGuestDto } from './dto/upgrade-guest.dto';
 
 const TRIAL_DAYS = 3;
+const GUEST_TOKEN_TTL = '4h';
+const GUEST_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const GUEST_PURGE_EVERY_MS = 60 * 60 * 1000;
+const GUEST_PER_IP_PER_DAY = parseInt(process.env.GUEST_PER_IP_PER_DAY ?? '10', 10);
+const GUEST_PER_DEVICE_PER_DAY = parseInt(process.env.GUEST_PER_DEVICE_PER_DAY ?? '3', 10);
 
 export interface OAuthProfile {
   provider: 'GOOGLE' | 'APPLE';
@@ -25,12 +36,118 @@ export interface OAuthProfile {
 }
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit, OnModuleDestroy {
+  private purgeTimer?: NodeJS.Timeout;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
+
+  onModuleInit() {
+    this.purgeTimer = setInterval(() => void this.purgeStaleGuests().catch(() => undefined), GUEST_PURGE_EVERY_MS);
+    this.purgeTimer.unref();
+  }
+
+  onModuleDestroy() {
+    if (this.purgeTimer) clearInterval(this.purgeTimer);
+  }
+
+  /** Adult by birthdate, or (guests only) by self-attestation. Everyone else must finish onboarding. */
+  static isAdultUser(u: { birthdate: Date | null; adultAttestedAt?: Date | null; isGuest?: boolean }): boolean {
+    if (u.birthdate) return AuthService.ageOf(u.birthdate) >= 18;
+    return !!u.isGuest && !!u.adultAttestedAt;
+  }
+
+  private async bumpDailyCounter(key: string, limit: number): Promise<void> {
+    const day = new Date().toISOString().slice(0, 10);
+    const full = `guest:${key}:${day}`;
+    const n = await this.redis.incr(full);
+    if (n === 1) await this.redis.expire(full, 26 * 60 * 60);
+    if (n > limit) {
+      throw new HttpException(
+        'Too many guest sessions from this device or network today. Please create a free account.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /** Guest = random video chat only. Short-lived token, capped per IP and per device per day. */
+  async createGuest(ctx: { ip: string | null; deviceId: string | null; country: string | null }) {
+    if (!ctx.deviceId) throw new BadRequestException('A valid X-Device-Id header is required');
+    await this.bumpDailyCounter(`device:${ctx.deviceId}`, GUEST_PER_DEVICE_PER_DAY);
+    if (ctx.ip) await this.bumpDailyCounter(`ip:${ctx.ip}`, GUEST_PER_IP_PER_DAY);
+
+    const now = new Date();
+    const user = await this.prisma.user.create({
+      data: {
+        authProvider: 'GUEST',
+        isGuest: true,
+        displayName: `Guest${Math.floor(1000 + Math.random() * 9000)}`,
+        country: ctx.country,
+        adultAttestedAt: now,
+        rulesAcceptedAt: now,
+        lastDeviceId: ctx.deviceId,
+        lastIp: ctx.ip,
+        trialEndsAt: new Date(now.getTime() - 1000), // no trial: guests are on the free plan
+      },
+    });
+    return {
+      access_token: this.jwt.sign({ sub: user.id, guest: true }, { expiresIn: GUEST_TOKEN_TTL }),
+      user: this.sanitize(user),
+    };
+  }
+
+  /** Turns the current guest into a full account (keeps the same user row). */
+  async upgradeGuest(userId: string, dto: UpgradeGuestDto) {
+    const current = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!current || !current.isGuest) throw new BadRequestException('Only guest accounts can be upgraded');
+    const birthdate = new Date(dto.birthdate);
+    AuthService.assertAdult(birthdate);
+    if (await this.prisma.user.findUnique({ where: { email: dto.email } })) {
+      throw new ConflictException('Email already registered');
+    }
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        email: dto.email,
+        passwordHash: await bcrypt.hash(dto.password, 10),
+        authProvider: 'EMAIL',
+        isGuest: false,
+        displayName: dto.displayName,
+        birthdate,
+        gender: dto.gender,
+        trialEndsAt: this.trialEnd(),
+      },
+    });
+    return this.tokenFor(user);
+  }
+
+  /** Deletes old guests that have no reports involving them or their sessions (nothing to preserve). */
+  async purgeStaleGuests(): Promise<number> {
+    if (!(await this.redis.set('lock:purge-guests', '1', 'PX', GUEST_PURGE_EVERY_MS - 1000, 'NX'))) return 0;
+    const stale = await this.prisma.user.findMany({
+      where: {
+        isGuest: true,
+        createdAt: { lt: new Date(Date.now() - GUEST_MAX_AGE_MS) },
+        reportsMade: { none: {} },
+        reportsReceived: { none: {} },
+        sessionsAsA: { none: { reports: { some: {} } } },
+        sessionsAsB: { none: { reports: { some: {} } } },
+      },
+      select: { id: true },
+      take: 200,
+    });
+    for (const { id } of stale) {
+      await this.prisma.$transaction([
+        this.prisma.dailyUsage.deleteMany({ where: { userId: id } }),
+        this.prisma.callSession.deleteMany({ where: { OR: [{ userAId: id }, { userBId: id }] } }),
+        this.prisma.user.delete({ where: { id } }),
+      ]);
+    }
+    return stale.length;
+  }
 
   /** Stores the login result under a single-use code (60s) so no JWT ever travels in a URL. */
   async createLoginCode(userId: string): Promise<string> {
@@ -77,7 +194,7 @@ export class AuthService {
 
   private tokenFor(user: User) {
     return {
-      access_token: this.jwt.sign({ sub: user.id, email: user.email }),
+      access_token: this.jwt.sign({ sub: user.id, email: user.email ?? undefined }),
       user: this.sanitize(user),
     };
   }

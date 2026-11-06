@@ -1,7 +1,9 @@
 import { Controller, Headers, Post, RawBodyRequest, Req } from '@nestjs/common';
 import { Request } from 'express';
+import { SkipGeo } from '../common/geo/skip-geo.decorator';
 import { StripeService } from './stripe.service';
 
+@SkipGeo()
 @Controller('billing')
 export class WebhookController {
   constructor(private readonly stripe: StripeService) {}

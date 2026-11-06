@@ -1,23 +1,22 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
-import { getAllowedCountries } from './geo.config';
+import { Reflector } from '@nestjs/core';
+import { isCountryAllowed } from './geo.config';
+import { SKIP_GEO } from './skip-geo.decorator';
 
+/** Applied globally (APP_GUARD): every HTTP route is region-gated unless marked @SkipGeo(). */
 @Injectable()
 export class GeoGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
   canActivate(ctx: ExecutionContext): boolean {
+    if (ctx.getType() !== 'http') return true;
+    if (this.reflector.getAllAndOverride<boolean>(SKIP_GEO, [ctx.getHandler(), ctx.getClass()])) return true;
     const req = ctx.switchToHttp().getRequest();
-    const country: string | null = req.country ?? null;
-
-    if (!country) {
-      // Graceful fallback when the header is absent (e.g. local dev without Cloudflare).
-      // Set GEO_STRICT=true in production to block requests with unknown origin.
-      if (process.env.GEO_STRICT === 'true') {
-        throw new ForbiddenException({ statusCode: 403, code: 'REGION_BLOCKED', message: 'This service is not available in your region.' });
-      }
-      return true;
-    }
-
-    if (getAllowedCountries().includes(country)) return true;
-
-    throw new ForbiddenException({ statusCode: 403, code: 'REGION_BLOCKED', message: 'This service is not available in your region.' });
+    if (isCountryAllowed(req.country ?? null)) return true;
+    throw new ForbiddenException({
+      statusCode: 403,
+      code: 'REGION_BLOCKED',
+      message: 'This service is not available in your region.',
+    });
   }
 }

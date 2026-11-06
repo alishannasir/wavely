@@ -28,7 +28,7 @@ export class StripeService {
       mode: 'subscription',
       line_items: [{ price: this.priceFor(plan), quantity: 1 }],
       client_reference_id: userId,
-      customer_email: user.email,
+      customer_email: user.email ?? undefined,
       success_url: `${frontend}/home?billing=success`,
       cancel_url: `${frontend}/upgrade?billing=cancelled`,
       metadata: { userId, plan },

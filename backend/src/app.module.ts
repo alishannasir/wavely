@@ -9,6 +9,8 @@ import { FriendsModule } from './friends/friends.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { GeoMiddleware } from './common/geo/geo.middleware';
+import { GeoGuard } from './common/geo/geo.guard';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { GeoMiddleware } from './common/geo/geo.middleware';
     PaymentsModule,
     ModerationModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: GeoGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
