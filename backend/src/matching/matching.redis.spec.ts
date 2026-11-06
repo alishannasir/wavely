@@ -184,6 +184,14 @@ d('call state (redis)', () => {
     expect(await calls.claimDue(Date.now() + 1e13)).toHaveLength(0);
   });
 
+  it('dropPendingByCaller without a socket drops every ringing call of that user', async () => {
+    await calls.addPending('p1', { callerUserId: 'a', callerSocketId: 'sa', calleeUserId: 'b' });
+    await calls.addPending('p2', { callerUserId: 'a', callerSocketId: 'sa2', calleeUserId: 'c' });
+    await calls.addPending('p3', { callerUserId: 'z', callerSocketId: 'sz', calleeUserId: 'b' });
+    expect(await calls.dropPendingByCaller('a')).toHaveLength(2);
+    expect(await calls.peekPending('p3')).not.toBeNull(); // other callers are untouched
+  });
+
   it('pending calls expire', async () => {
     await calls.addPending('c3', { callerUserId: 'a', callerSocketId: 'sa', calleeUserId: 'b' });
     expect(await redis.ttl('call:pending:c3')).toBeLessThanOrEqual(30);
