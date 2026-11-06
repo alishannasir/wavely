@@ -1,3 +1,4 @@
+import './env'; // must stay first: loads .env before any other module reads process.env
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
