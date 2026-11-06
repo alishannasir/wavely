@@ -16,3 +16,19 @@ export function getAllowedCountries(): string[] {
   }
   return DEFAULT_ALLOWED_COUNTRIES;
 }
+
+/**
+ * Country of the caller from Cloudflare's CF-IPCountry header. The header is trivially spoofable
+ * unless the app is only reachable through Cloudflare, so it is ignored unless TRUST_PROXY=true.
+ */
+export function resolveCountry(headers: Record<string, unknown>): string | null {
+  if (process.env.TRUST_PROXY !== 'true') return null;
+  const header = headers['cf-ipcountry'];
+  return typeof header === 'string' && header !== 'XX' ? header.toUpperCase() : null;
+}
+
+/** Same rule for HTTP and sockets. Unknown country is blocked only when GEO_STRICT=true. */
+export function isCountryAllowed(country: string | null): boolean {
+  if (!country) return process.env.GEO_STRICT !== 'true';
+  return getAllowedCountries().includes(country);
+}

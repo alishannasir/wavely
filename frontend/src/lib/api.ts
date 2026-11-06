@@ -19,6 +19,12 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     window.location.assign('/unavailable');
     throw new Error('Region blocked');
   }
+  if (res.status === 401 && token && !path.startsWith('/auth/')) {
+    // Expired or revoked session (guest tokens last 4h): start over from the landing page.
+    useAuth.getState().logout();
+    window.location.assign('/');
+    throw new Error('Session expired');
+  }
   if (!res.ok) {
     const message = Array.isArray(body?.message) ? body.message.join(', ') : body?.message;
     throw new Error(message ?? `Request failed (${res.status})`);

@@ -77,7 +77,7 @@ export default function Call() {
 
   useEffect(() => {
     if (!token) {
-      navigate('/login');
+      navigate('/');
       return;
     }
     const socket = getSocket();
@@ -125,6 +125,10 @@ export default function Call() {
       }
       if (payload?.code === 'RULES_REQUIRED') {
         navigate('/home');
+        return;
+      }
+      if (payload?.code === 'REGION_BLOCKED') {
+        navigate('/unavailable');
         return;
       }
       if (payload?.code === 'BANNED') {
@@ -291,7 +295,7 @@ export default function Call() {
                 {peer?.displayName ?? 'Stranger'}
                 {peer?.country ? ` \u00b7 ${peer.country}` : ''}
               </span>
-              {!isDirect && (
+              {!isDirect && !useAuth.getState().user?.isGuest && (
                 <button
                   onClick={addFriend}
                   disabled={friendRequested}

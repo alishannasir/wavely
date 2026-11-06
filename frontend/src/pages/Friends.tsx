@@ -28,7 +28,7 @@ interface Message {
   createdAt: string;
 }
 
-export default function Friends() {
+function FriendsInner() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const me = useAuth((s) => s.user);
@@ -222,4 +222,21 @@ export default function Friends() {
       <IncomingCallBanner />
     </main>
   );
+}
+
+export default function Friends() {
+  const isGuest = useAuth((s) => s.user?.isGuest);
+  if (isGuest) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6 max-w-md mx-auto text-center">
+        <h1 className="text-2xl font-bold">Friends need an account</h1>
+        <p className="text-zinc-400">Create a free account to add friends, message them and call them directly.</p>
+        <Link to="/signup" className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-6 py-3">
+          Create an account
+        </Link>
+        <Link to="/home" className="text-sm text-zinc-400">Back</Link>
+      </main>
+    );
+  }
+  return <FriendsInner />;
 }

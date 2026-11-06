@@ -3,7 +3,8 @@ import { persist } from 'zustand/middleware';
 
 export interface User {
   id: string;
-  email: string;
+  email: string | null;
+  isGuest?: boolean;
   displayName?: string | null;
   avatarUrl?: string | null;
   birthdate?: string | null;

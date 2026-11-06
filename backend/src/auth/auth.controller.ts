@@ -15,16 +15,32 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { ExchangeDto } from './dto/exchange.dto';
-import { GeoGuard } from '../common/geo/geo.guard';
+import { GuestDto } from './dto/guest.dto';
+import { UpgradeGuestDto } from './dto/upgrade-guest.dto';
+import { clientIp, sanitizeDeviceId } from '../common/client-info';
 
 @Controller('auth')
-@UseGuards(GeoGuard)
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
   @Post('register')
   register(@Body() dto: RegisterDto, @Req() req: { country?: string | null }) {
     return this.auth.register(dto, req.country ?? null);
+  }
+
+  @Post('guest')
+  guest(@Body() _dto: GuestDto, @Req() req: any) {
+    return this.auth.createGuest({
+      ip: clientIp(req.headers, req.socket?.remoteAddress),
+      deviceId: sanitizeDeviceId(req.headers['x-device-id']),
+      country: req.country ?? null,
+    });
+  }
+
+  @Post('upgrade-guest')
+  @UseGuards(AuthGuard('jwt'))
+  upgradeGuest(@Req() req: { user: { userId: string } }, @Body() dto: UpgradeGuestDto) {
+    return this.auth.upgradeGuest(req.user.userId, dto);
   }
 
   @Post('login')

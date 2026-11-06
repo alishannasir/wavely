@@ -38,6 +38,9 @@ cd frontend && npm run typecheck && npm test
 
 ## Auth notes
 
+Login is optional. **Guests** (`POST /api/auth/guest`, 18+ and rules attested, 4h token, capped per IP/device per day) get random video chat only: no filters, friends, messages or billing. A guest can upgrade to a full account (`POST /api/auth/upgrade-guest`). Stale guests with no reports are purged after 7 days.
+
+
 Google login redirects back with a single-use 60-second `?code=`, which the frontend exchanges via `POST /api/auth/exchange`. JWTs never appear in URLs.
 
 ## Layout

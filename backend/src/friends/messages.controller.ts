@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { NotGuestGuard } from '../auth/not-guest.guard';
 import { MessagesService } from './messages.service';
 
 interface AuthedRequest {
@@ -7,7 +8,7 @@ interface AuthedRequest {
 }
 
 @Controller('messages')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), NotGuestGuard)
 export class MessagesController {
   constructor(private readonly messages: MessagesService) {}
 

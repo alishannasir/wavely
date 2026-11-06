@@ -11,6 +11,7 @@ enum AuthProvider {
   EMAIL
   GOOGLE
   APPLE
+  GUEST
 }
 
 enum Gender {
@@ -69,7 +70,10 @@ enum ReportStatus {
 
 model User {
   id            String       @id @default(cuid())
-  email         String       @unique
+  email         String?      @unique
+  // Guests: random chat only, no email. Self-attested 18+ (adultAttestedAt) instead of a birthdate.
+  isGuest       Boolean      @default(false)
+  adultAttestedAt DateTime?
   passwordHash  String?
   authProvider  AuthProvider
   displayName   String?
@@ -101,6 +105,7 @@ model User {
   reportsReceived  Report[]      @relation("ReportReported")
   dailyUsage       DailyUsage[]
 
+  @@index([isGuest, createdAt])
   @@map("users")
 }
 

@@ -17,7 +17,7 @@ export default function Home() {
   const [showRules, setShowRules] = useState(false);
 
   if (!user) {
-    navigate('/login');
+    navigate('/');
     return null;
   }
 
@@ -33,9 +33,15 @@ export default function Home() {
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Hey, {user.displayName ?? 'there'}</h1>
         <span className="flex items-center gap-4">
-          <Link to="/friends" className="text-sm text-emerald-400 hover:text-emerald-300">
-            Friends
-          </Link>
+          {user.isGuest ? (
+            <Link to="/signup" className="text-sm text-emerald-400 hover:text-emerald-300">
+              Sign up
+            </Link>
+          ) : (
+            <Link to="/friends" className="text-sm text-emerald-400 hover:text-emerald-300">
+              Friends
+            </Link>
+          )}
           <button
             onClick={() => {
               logout();
@@ -47,6 +53,12 @@ export default function Home() {
           </button>
         </span>
       </header>
+
+      {user.isGuest && (
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm">
+          You're chatting as a guest. <Link to="/signup" className="font-semibold text-emerald-400">Create a free account</Link> to add friends, message them and use filters.
+        </div>
+      )}
 
       {billing && (
         <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 text-sm">
