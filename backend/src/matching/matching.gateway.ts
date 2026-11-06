@@ -231,10 +231,14 @@ export class MatchingGateway
   /** Atomic claim, skipping peers whose socket has disappeared since they queued. */
   private async matchOrQueue(entry: QueueEntry, keepQueuedAt = false): Promise<QueueEntry | null> {
     for (let i = 0; i < MAX_MATCH_ATTEMPTS; i++) {
-      const peer = await this.matching.findOrQueue(entry, keepQueuedAt);
+      // Only the first attempt requires the user to still be waiting: after it, the Lua script has
+      // already taken them out of the queue (they are "in hand") while we vet the claimed peer.
+      const peer = await this.matching.findOrQueue(entry, { keepQueuedAt, requireWaiting: keepQueuedAt && i === 0 });
       if (!peer) return null;
       if ((await this.isSocketAlive(peer.socketId)) && (await this.peerEligible(peer))) return peer;
     }
+    // Every peer we claimed was unusable, and the searcher is in hand: put them back in the queue.
+    await this.matching.enqueueOnly(entry);
     return null;
   }
 
