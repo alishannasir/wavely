@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import RulesModal from '../components/RulesModal';
 import { api } from '../lib/api';
+import { preloadNsfwModel } from '../lib/nsfw';
 import { useAuth, User } from '../store/auth';
 import { useDevices } from '../store/devices';
 
@@ -60,6 +61,7 @@ export default function Start() {
       return;
     }
     void openPreview();
+    preloadNsfwModel();
     return stopStream;
   }, [user, navigate, openPreview, stopStream]);
 

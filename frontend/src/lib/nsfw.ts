@@ -9,6 +9,37 @@ export function explicitScore(predictions: Pick<PredictionType, 'className' | 'p
     .reduce((sum, p) => sum + p.probability, 0);
 }
 
+let modelPromise: Promise<NSFWJS> | null = null;
+
+const defaultLoader = async (): Promise<NSFWJS> => (await import('nsfwjs')).load('MobileNetV2');
+
+/**
+ * The classifier model is loaded once per page and shared by every call. A model per call would
+ * re-download/parse it on every Next and keep the old weights (and WebGL memory) alive.
+ * A failed load is not cached, so the next call can retry.
+ */
+export function loadNsfwModel(loader: () => Promise<NSFWJS> = defaultLoader): Promise<NSFWJS> {
+  if (!modelPromise) {
+    modelPromise = loader().catch((err) => {
+      modelPromise = null;
+      throw err;
+    });
+  }
+  return modelPromise;
+}
+
+/** Warm the model while the user is on the camera preview, so the first call is scanned straight away. */
+export function preloadNsfwModel(): void {
+  const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  if (conn?.saveData) return; // respect data-saver mode; scanning will load it lazily instead
+  void loadNsfwModel().catch(() => undefined);
+}
+
+/** Test helper. */
+export function _resetNsfwModelForTests(): void {
+  modelPromise = null;
+}
+
 interface Options {
   getVideo: () => HTMLVideoElement | null;
   /** Called once when two consecutive samples are explicit. */
@@ -37,8 +68,7 @@ export class NsfwScanner {
   async start(): Promise<void> {
     this.stopped = false;
     try {
-      const nsfwjs = await import('nsfwjs');
-      this.model = await nsfwjs.load('MobileNetV2');
+      this.model = await loadNsfwModel();
     } catch {
       return; // scanning is best-effort; the manual Report button still works
     }

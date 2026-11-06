@@ -18,3 +18,28 @@ describe('explicitScore', () => {
     );
   });
 });
+
+import { beforeEach, vi } from 'vitest';
+import { _resetNsfwModelForTests, loadNsfwModel } from './nsfw';
+
+describe('loadNsfwModel', () => {
+  beforeEach(() => _resetNsfwModelForTests());
+
+  it('loads the model once and shares it between calls', async () => {
+    const model = { classify: vi.fn() } as never;
+    const loader = vi.fn().mockResolvedValue(model);
+    const [a, b] = await Promise.all([loadNsfwModel(loader), loadNsfwModel(loader)]);
+    const c = await loadNsfwModel(loader);
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(a).toBe(model);
+    expect(b).toBe(model);
+    expect(c).toBe(model);
+  });
+
+  it('does not cache a failed load, so the next call retries', async () => {
+    const loader = vi.fn().mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce({ ok: true } as never);
+    await expect(loadNsfwModel(loader)).rejects.toThrow('network');
+    await expect(loadNsfwModel(loader)).resolves.toEqual({ ok: true });
+    expect(loader).toHaveBeenCalledTimes(2);
+  });
+});
