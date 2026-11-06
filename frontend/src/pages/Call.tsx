@@ -199,12 +199,16 @@ export default function Call() {
     const onChat = (msg: { text: string; at: number }) =>
       setChat((c) => [...c, { mine: false, text: msg.text, at: msg.at }].slice(-50));
 
-    // The server drops sockets with an invalid/expired token (guest tokens last 4h).
-    const onServerDisconnect = (reason: string) => {
-      if (reason === 'io server disconnect') {
+    // The server refuses the connection with a reason (see the gateway's auth middleware).
+    const onConnectError = (err: Error) => {
+      if (err.message === 'UNAUTHORIZED' || err.message === 'BANNED') {
+        // Expired/invalid session (guest tokens last 4h) or a banned account.
         useAuth.getState().logout();
         navigate('/');
+      } else if (err.message === 'REGION_BLOCKED') {
+        navigate('/unavailable');
       }
+      // SERVER_ERROR and network errors are retried by lib/socket.ts / Socket.IO; we keep waiting.
     };
 
     const onReplaced = () => {
@@ -230,12 +234,14 @@ export default function Call() {
     socket.on('peer-left', onPeerLeft);
     socket.on('match-error', onError);
     socket.on('call-chat', onChat);
-    socket.on('disconnect', onServerDisconnect);
+    socket.on('connect_error', onConnectError);
     socket.on('session-replaced', onReplaced);
     socket.on('filters-relaxed', onRelaxed);
     socket.on('limit-reached', onLimitReached);
     socket.on('call-declined', onDeclined);
     socket.on('call-unavailable', onUnavailable);
+    // A socket that already failed earlier (e.g. opened on another page) will not report again unless retried.
+    if (!socket.connected && !socket.active) socket.connect();
     start();
 
     return () => {
@@ -244,7 +250,7 @@ export default function Call() {
       socket.off('peer-left', onPeerLeft);
       socket.off('match-error', onError);
       socket.off('call-chat', onChat);
-      socket.off('disconnect', onServerDisconnect);
+      socket.off('connect_error', onConnectError);
       socket.off('session-replaced', onReplaced);
       socket.off('filters-relaxed', onRelaxed);
       socket.off('limit-reached', onLimitReached);

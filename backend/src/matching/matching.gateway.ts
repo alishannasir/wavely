@@ -3,6 +3,7 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -51,7 +52,9 @@ const userRoom = (userId: string) => `user:${userId}`;
  * Socket.IO uses the Redis adapter, so several API instances can run side by side.
  */
 @WebSocketGateway({ cors: { origin: process.env.FRONTEND_URL ?? 'http://localhost:5173' } })
-export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy {
+export class MatchingGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
+{
   @WebSocketServer()
   server!: Server;
 
@@ -84,35 +87,52 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (this.deadlineTimer) clearInterval(this.deadlineTimer);
   }
 
+  /**
+   * Authentication runs as a Socket.IO middleware, so a socket is only "connected" (and can send
+   * events) once the user is identified. Rejections reach the client as `connect_error` with one
+   * of: UNAUTHORIZED (bad/expired token), BANNED, REGION_BLOCKED, SERVER_ERROR (retryable).
+   */
+  afterInit(server: Server) {
+    server.use(async (socket, next) => {
+      try {
+        const token = socket.handshake.auth?.token as string | undefined;
+        let userId: string;
+        try {
+          userId = this.jwt.verify<{ sub: string }>(token ?? '').sub;
+        } catch {
+          return next(new Error('UNAUTHORIZED'));
+        }
+        const ip = clientIp(socket.handshake.headers, socket.handshake.address);
+        const deviceId = sanitizeDeviceId(socket.handshake.auth?.deviceId);
+        if (await this.bans.isBlocked(ip, deviceId)) return next(new Error('BANNED'));
+        if (!isCountryAllowed(resolveCountry(socket.handshake.headers))) return next(new Error('REGION_BLOCKED'));
+
+        const me = await this.prisma.user
+          .update({
+            where: { id: userId },
+            data: { ...(deviceId ? { lastDeviceId: deviceId } : {}), ...(ip ? { lastIp: ip } : {}) },
+          })
+          .catch(() => null);
+        if (!me) return next(new Error('UNAUTHORIZED')); // user no longer exists
+        if (me.status === 'BANNED') return next(new Error('BANNED'));
+
+        socket.data.userId = userId;
+        socket.data.isGuest = me.isGuest;
+        // Every tab/device joins the user's room, so direct emits reach all of them.
+        await socket.join(userRoom(userId));
+        next();
+      } catch {
+        next(new Error('SERVER_ERROR')); // DB/Redis hiccup: the client retries, it does not log out
+      }
+    });
+  }
+
   async handleConnection(client: Socket) {
-    try {
-      const token = client.handshake.auth?.token as string | undefined;
-      const payload = this.jwt.verify<{ sub: string }>(token ?? '');
-      const ip = clientIp(client.handshake.headers, client.handshake.address);
-      const deviceId = sanitizeDeviceId(client.handshake.auth?.deviceId);
-      if (await this.bans.isBlocked(ip, deviceId)) {
-        client.emit('match-error', { code: 'BANNED', message: 'Access denied.' });
-        client.disconnect(true);
-        return;
-      }
-      client.data.userId = payload.sub;
-      const country = resolveCountry(client.handshake.headers);
-      if (!isCountryAllowed(country)) {
-        client.emit('match-error', { code: 'REGION_BLOCKED', message: 'This service is not available in your region.' });
-        client.disconnect(true);
-        return;
-      }
-      const me = await this.prisma.user.update({
-        where: { id: payload.sub },
-        data: { ...(deviceId ? { lastDeviceId: deviceId } : {}), ...(ip ? { lastIp: ip } : {}) },
-      });
-      client.data.isGuest = me.isGuest;
-      // Every tab/device joins the user's room, so direct emits reach all of them.
-      await client.join(userRoom(payload.sub));
-      await this.presence.markOnline(payload.sub, client.id);
-    } catch {
-      client.disconnect(true);
-    }
+    const userId = client.data.userId as string | undefined;
+    if (!userId) return;
+    await this.presence.markOnline(userId, client.id);
+    // The socket may have dropped while we were writing presence; don't leave the user "online".
+    if (!client.connected) await this.presence.markOffline(userId, client.id);
   }
 
   async handleDisconnect(client: Socket) {
