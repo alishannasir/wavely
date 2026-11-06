@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { primaryFrontendUrl } from '../common/cors';
 import Stripe from 'stripe';
 import { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,7 +24,7 @@ export class StripeService {
   async createCheckout(userId: string, plan: 'MONTHLY' | 'ANNUAL') {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
-    const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontend = primaryFrontendUrl();
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: this.priceFor(plan), quantity: 1 }],
@@ -42,7 +43,7 @@ export class StripeService {
       orderBy: { currentPeriodEnd: 'desc' },
     });
     if (!sub?.stripeCustomerId) throw new NotFoundException('No billing account yet');
-    const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const frontend = primaryFrontendUrl();
     const session = await this.stripe.billingPortal.sessions.create({
       customer: sub.stripeCustomerId,
       return_url: `${frontend}/home`,
