@@ -119,8 +119,20 @@ export class MatchingService implements OnModuleInit, OnModuleDestroy {
     return (await this.redis.set(`lock:${name}`, '1', 'PX', ttlMs, 'NX')) === 'OK';
   }
 
+  /** Counts a started call against both users' daily match cap (at match time, not when the call ends). */
+  async recordMatchStart(userIds: string[]): Promise<void> {
+    const date = new Date(new Date().toISOString().slice(0, 10)); // midnight UTC
+    for (const userId of userIds) {
+      await this.prisma.dailyUsage.upsert({
+        where: { userId_date: { userId, date } },
+        create: { userId, date, minutesUsed: 0, matchesUsed: 1 },
+        update: { matchesUsed: { increment: 1 } },
+      });
+    }
+  }
+
   /**
-   * Ends the session and records usage for both users (Phase 6 enforces caps).
+   * Ends the session and bills the minutes to both users (matches were counted at match time).
    * Safe to call from both sides concurrently: only the first caller records usage.
    */
   async closeSession(sessionId: string, endedAt = new Date()): Promise<void> {
@@ -133,13 +145,15 @@ export class MatchingService implements OnModuleInit, OnModuleDestroy {
     });
     if (claimed.count === 0) return;
 
-    const minutes = Math.max(1, Math.round((capped.getTime() - session.startedAt.getTime()) / 60_000));
-    const date = new Date(new Date().toISOString().slice(0, 10)); // midnight UTC
+    // Minutes are billed when the call ends; matches were already counted when it started.
+    const minutes = Math.round((capped.getTime() - session.startedAt.getTime()) / 60_000);
+    if (minutes <= 0) return;
+    const date = new Date(session.startedAt.toISOString().slice(0, 10)); // day the call started (UTC)
     for (const userId of [session.userAId, session.userBId]) {
       await this.prisma.dailyUsage.upsert({
         where: { userId_date: { userId, date } },
-        create: { userId, date, minutesUsed: minutes, matchesUsed: 1 },
-        update: { minutesUsed: { increment: minutes }, matchesUsed: { increment: 1 } },
+        create: { userId, date, minutesUsed: minutes, matchesUsed: 0 },
+        update: { minutesUsed: { increment: minutes } },
       });
     }
   }

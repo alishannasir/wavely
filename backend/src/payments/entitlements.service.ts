@@ -57,6 +57,14 @@ export class EntitlementsService {
     return { minutesUsed: usage?.minutesUsed ?? 0, matchesUsed: usage?.matchesUsed ?? 0 };
   }
 
+  /** Milliseconds of chat time left today, or null when the plan has no minute cap. */
+  async remainingMs(user: User): Promise<number | null> {
+    const entitlement = await this.entitlementFor(user);
+    if (entitlement.dailyMinutes === null) return null;
+    const usage = await this.usageToday(user.id);
+    return Math.max(0, (entitlement.dailyMinutes - usage.minutesUsed) * 60_000);
+  }
+
   /** Server-side gate for starting a match. Never trust the client. */
   async canStartMatch(
     user: User,

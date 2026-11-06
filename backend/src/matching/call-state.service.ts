@@ -17,6 +17,7 @@ export interface PendingCall {
 
 const ACTIVE_TTL_SEC = 3 * 60 * 60; // longer than the 2h LiveKit token
 export const PENDING_TTL_SEC = 30;
+const DEADLINES_KEY = 'call:deadlines';
 const CHAT_KEEP = 50;
 const CHAT_MAX_LEN = 500;
 const CHAT_PER_10S = 20;
@@ -36,8 +37,16 @@ export class CallStateService {
     sessionId: string,
     a: { userId: string; socketId: string },
     b: { userId: string; socketId: string },
+    deadline?: { atMs: number; limitedUserId: string } | null,
   ): Promise<void> {
     const m = this.redis.multi();
+    m.set(
+      `call:session:${sessionId}`,
+      JSON.stringify({ users: [a.userId, b.userId], sockets: [a.socketId, b.socketId], limitedUserId: deadline?.limitedUserId ?? null }),
+      'EX',
+      ACTIVE_TTL_SEC,
+    );
+    if (deadline) m.zadd(DEADLINES_KEY, deadline.atMs, sessionId);
     for (const [me, peer] of [[a, b], [b, a]]) {
       const info: ActiveCall = {
         sessionId,
@@ -72,6 +81,10 @@ export class CallStateService {
     m.del(`call:sock:${info.peerSocketId}`);
     m.del(`call:user:${info.userId}`);
     m.del(`call:user:${info.peerUserId}`);
+    if (won) {
+      m.zrem(DEADLINES_KEY, info.sessionId);
+      m.del(`call:session:${info.sessionId}`);
+    }
     await m.exec();
     return won ? info : null;
   }
@@ -140,5 +153,21 @@ export class CallStateService {
   async getChat(sessionId: string): Promise<ChatLine[]> {
     const raw = await this.redis.lrange(`call:chat:${sessionId}`, 0, -1);
     return raw.map((r) => JSON.parse(r) as ChatLine);
+  }
+
+  /**
+   * Sessions whose free-tier time ran out. Each is claimed with ZREM, so with several API
+   * instances exactly one of them handles a given session.
+   */
+  async claimDue(nowMs: number): Promise<{ sessionId: string; limitedUserId: string | null; users: string[]; sockets: string[] }[]> {
+    const ids = await this.redis.zrangebyscore(DEADLINES_KEY, '-inf', nowMs);
+    const out: { sessionId: string; limitedUserId: string | null; users: string[]; sockets: string[] }[] = [];
+    for (const sessionId of ids) {
+      if ((await this.redis.zrem(DEADLINES_KEY, sessionId)) !== 1) continue;
+      const raw = await this.redis.get(`call:session:${sessionId}`);
+      if (!raw) continue;
+      out.push({ sessionId, ...(JSON.parse(raw) as { users: string[]; sockets: string[]; limitedUserId: string | null }) });
+    }
+    return out;
   }
 }
