@@ -11,6 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthService } from '../auth/auth.service';
 import { MatchingService, QueueEntry } from './matching.service';
 import { LivekitService } from './livekit.service';
 import { EntitlementsService } from '../payments/entitlements.service';
@@ -89,6 +90,14 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.emit('match-error', { message: 'Your account cannot join matches right now.' });
       return;
     }
+    // 18+ gate: OAuth signups without a birthdate must finish onboarding first.
+    if (!user.birthdate || AuthService.ageOf(user.birthdate) < 18) {
+      client.emit('match-error', {
+        code: 'AGE_REQUIRED',
+        message: 'Please confirm you are 18 or older before matching.',
+      });
+      return;
+    }
 
     // Server-side tier enforcement (trial / paid / free caps).
     const check = await this.entitlements.canStartMatch(user);
@@ -121,6 +130,10 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     );
   }
 
+  private canCall(user: { status: string; birthdate: Date | null }): boolean {
+    return user.status === 'ACTIVE' && !!user.birthdate && AuthService.ageOf(user.birthdate) >= 18;
+  }
+
   @SubscribeMessage('call-friend')
   async callFriend(
     @ConnectedSocket() client: Socket,
@@ -138,6 +151,10 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !this.canCall(user)) {
+      client.emit('call-unavailable', { message: 'Your account cannot place calls right now.' });
+      return;
+    }
     const callId = randomUUID();
     this.pendingCalls.set(callId, {
       callerUserId: userId,
@@ -166,7 +183,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.prisma.user.findUnique({ where: { id: pending.callerUserId } }),
       this.prisma.user.findUnique({ where: { id: pending.calleeUserId } }),
     ]);
-    if (!caller || !callee) {
+    if (!caller || !callee || !this.canCall(caller) || !this.canCall(callee)) {
       client.emit('call-unavailable', { message: 'This call is no longer available.' });
       return;
     }

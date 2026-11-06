@@ -117,7 +117,11 @@ export default function Call() {
       start();
     };
 
-    const onError = (payload: { message?: string }) => {
+    const onError = (payload: { code?: string; message?: string }) => {
+      if (payload?.code === 'AGE_REQUIRED') {
+        navigate('/onboarding');
+        return;
+      }
       setNotice(payload?.message ?? 'Something went wrong.');
     };
 

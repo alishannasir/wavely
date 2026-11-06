@@ -21,11 +21,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     // Re-check status so suspended/banned users lose access before their token expires.
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { status: true },
+      select: { status: true, role: true },
     });
     if (!user || user.status !== 'ACTIVE') {
       throw new ForbiddenException('Account is suspended or banned');
     }
-    return { userId: payload.sub, email: payload.email };
+    return { userId: payload.sub, email: payload.email, role: user.role };
   }
 }
