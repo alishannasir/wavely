@@ -5,7 +5,8 @@ import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { useAuth } from '../store/auth';
-import PageShell, { Card } from '../components/ui/PageShell';
+import AppShell from '../components/nav/AppShell';
+import { Card } from '../components/ui/PageShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import Modal from '../components/ui/Modal';
 import FlagPill from '../components/ui/FlagPill';
@@ -103,9 +104,9 @@ function FriendsInner() {
   }
 
   return (
-    <PageShell>
+    <AppShell title="Friends">
       <div className="mx-auto flex max-w-xl flex-col gap-5">
-        <h1 className="font-display text-3xl font-semibold text-brand">Friends</h1>
+        <h1 className="hidden font-display text-3xl font-semibold text-brand md:block">Friends</h1>
 
         {requests && requests.length > 0 && (
           <section className="flex flex-col gap-2" aria-label="Friend requests">
@@ -172,7 +173,7 @@ function FriendsInner() {
       </Modal>
 
       <IncomingCallBanner />
-    </PageShell>
+    </AppShell>
   );
 }
 
@@ -180,14 +181,14 @@ export default function Friends() {
   const isGuest = useAuth((s) => s.user?.isGuest);
   if (isGuest) {
     return (
-      <PageShell center>
-        <Card className="text-center">
+      <AppShell title="Friends">
+        <Card className="mt-6 text-center">
           <h1 className="mb-2 font-display text-2xl font-semibold text-brand">Friends need an account</h1>
           <p className="mb-5 text-muted">Create a free account to add friends, message them and call them directly.</p>
           <ChunkyButton to="/signup">Create an account</ChunkyButton>
           <Link to="/chat" className="mt-4 block text-sm text-muted hover:text-ink">Back to chat</Link>
         </Card>
-      </PageShell>
+      </AppShell>
     );
   }
   return <FriendsInner />;

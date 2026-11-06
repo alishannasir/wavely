@@ -1,0 +1,16 @@
+{
+  "name": "Wavely – random video chat",
+  "short_name": "Wavely",
+  "description": "Free random video chat with people around the world. 18+ only.",
+  "start_url": "/chat",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EEF0F6",
+  "theme_color": "#5B3CC4",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

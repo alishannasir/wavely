@@ -104,7 +104,7 @@ export default function ChatPanel({ messages, canSend, onSend, onReport, note, c
           disabled={!canSend}
           placeholder={canSend ? 'Write a message' : 'Start a chat to write a message'}
           aria-label="Chat message"
-          className="min-w-0 flex-1 rounded-xl bg-transparent px-2 py-2 text-sm placeholder:text-muted/70 focus:outline-none"
+          className="min-w-0 flex-1 rounded-xl bg-transparent px-2 py-2 text-base placeholder:text-muted/70 focus:outline-none"
         />
         <button
           type="button"
