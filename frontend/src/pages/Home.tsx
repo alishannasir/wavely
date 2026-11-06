@@ -1,10 +1,8 @@
-import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
-import RulesModal from '../components/RulesModal';
-import { useAuth, User } from '../store/auth';
+import { useAuth } from '../store/auth';
 import { useFilters } from '../store/filters';
 import { useBillingStatus } from '../lib/billing';
+import { OnlineCount } from '../lib/online';
 
 const inputCls =
   'rounded-xl bg-zinc-900 border border-zinc-700 px-4 py-3 focus:outline-none focus:border-emerald-500';
@@ -14,7 +12,6 @@ export default function Home() {
   const { user, logout } = useAuth();
   const { data: billing } = useBillingStatus(Boolean(user));
   const filters = useFilters();
-  const [showRules, setShowRules] = useState(false);
 
   if (!user) {
     navigate('/');
@@ -145,25 +142,15 @@ export default function Home() {
         </div>
       </section>
 
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col gap-3">
+        <OnlineCount />
         <button
-          onClick={() => (user.rulesAcceptedAt ? navigate('/call') : setShowRules(true))}
+          onClick={() => navigate('/start')}
           className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold py-4 text-lg transition-colors"
         >
           Start Chat
         </button>
       </div>
-      {showRules && (
-        <RulesModal
-          onCancel={() => setShowRules(false)}
-          onAccept={async () => {
-            const updated = await api<User>('/users/me/accept-rules', { method: 'POST' });
-            useAuth.getState().setUser(updated);
-            setShowRules(false);
-            navigate('/call');
-          }}
-        />
-      )}
     </main>
   );
 }

@@ -126,6 +126,20 @@ d('call state (redis)', () => {
     expect(await calls.peekPending('c2')).toBeNull();
   });
 
+  it('keeps the last 50 chat lines, trims text and rate limits', async () => {
+    const line = await calls.pushChat('s', 'a', '  hello   there  ');
+    expect(line?.text).toBe('hello there');
+    expect(await calls.pushChat('s', 'a', '   ')).toBeNull();
+    expect(await calls.pushChat('s', 'a', 42 as any)).toBeNull();
+    for (let i = 0; i < 60; i++) await calls.pushChat('s2', `u${i}`, `m${i}`); // distinct senders: no rate limit
+    const log = await calls.getChat('s2');
+    expect(log).toHaveLength(50);
+    expect(log[49].text).toBe('m59');
+    let accepted = 0;
+    for (let i = 0; i < 30; i++) if (await calls.pushChat('s3', 'spam', 'x')) accepted++;
+    expect(accepted).toBeLessThanOrEqual(20);
+  });
+
   it('pending calls expire', async () => {
     await calls.addPending('c3', { callerUserId: 'a', callerSocketId: 'sa', calleeUserId: 'b' });
     expect(await redis.ttl('call:pending:c3')).toBeLessThanOrEqual(30);

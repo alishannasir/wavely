@@ -2,17 +2,22 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import RulesModal from '../components/RulesModal';
 import { startGuestSession } from '../lib/guest';
-import { useAuth } from '../store/auth';
+import { isTokenExpired, useAuth } from '../store/auth';
+import { OnlineCount } from '../lib/online';
 
 export default function Landing() {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
+  const token = useAuth((s) => s.token);
   const [showRules, setShowRules] = useState(false);
 
   function start() {
     // Returning users (account or a still-valid guest) skip the guest sign-in.
-    if (user && !user.isGuest) navigate('/home');
-    else setShowRules(true);
+    if (user && !isTokenExpired(token)) navigate('/start'); // account or a still-valid guest session
+    else {
+      useAuth.getState().logout(); // drop an expired guest/account session
+      setShowRules(true);
+    }
   }
 
   return (
@@ -38,6 +43,7 @@ export default function Landing() {
           I already have an account
         </Link>
       </div>
+      <OnlineCount />
       <p className="text-xs text-zinc-500">
         No signup needed to chat. An account unlocks friends, messaging and filters.
       </p>
@@ -47,7 +53,7 @@ export default function Landing() {
           onAccept={async () => {
             await startGuestSession();
             setShowRules(false);
-            navigate('/call');
+            navigate('/start');
           }}
         />
       )}

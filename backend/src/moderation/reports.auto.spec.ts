@@ -10,7 +10,7 @@ function setup() {
     },
     user: { updateMany: jest.fn(), update: jest.fn() },
   };
-  const redis: any = { incr: jest.fn().mockResolvedValue(1), expire: jest.fn() };
+  const redis: any = { incr: jest.fn().mockResolvedValue(1), expire: jest.fn(), lrange: jest.fn().mockResolvedValue([]) };
   return { svc: new ReportsService(prisma, redis, {} as any), prisma, redis };
 }
 
@@ -34,5 +34,22 @@ describe('ReportsService.createAutoNsfw', () => {
   it('rejects a session the reporter was not in', async () => {
     const { svc } = setup();
     await expect(svc.createAutoNsfw('x', 'b', 's1', 0.9)).rejects.toBeDefined();
+  });
+});
+
+describe('chat log evidence', () => {
+  it('attaches the server-side chat log, labelled from the reporter point of view', async () => {
+    const { svc, prisma, redis } = setup();
+    redis.lrange.mockResolvedValue([
+      JSON.stringify({ userId: 'a', text: 'hi', at: 1 }),
+      JSON.stringify({ userId: 'b', text: 'yo', at: 2 }),
+    ]);
+    await svc.createAutoNsfw('a', 'b', 's1', 0.9);
+    const data = prisma.report.create.mock.calls[0][0].data;
+    expect(data.chatLog).toEqual([
+      { from: 'reporter', text: 'hi', at: 1 },
+      { from: 'reported', text: 'yo', at: 2 },
+    ]);
+    expect(data.evidenceExpiresAt).toBeInstanceOf(Date);
   });
 });

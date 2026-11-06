@@ -24,6 +24,17 @@ interface AuthState {
   logout: () => void;
 }
 
+/** True if the JWT's exp claim is in the past (or the token is unreadable). Does not verify the signature. */
+export function isTokenExpired(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now();
+  } catch {
+    return true;
+  }
+}
+
 export const useAuth = create<AuthState>()(
   persist(
     (set) => ({

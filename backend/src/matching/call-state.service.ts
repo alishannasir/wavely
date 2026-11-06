@@ -17,6 +17,15 @@ export interface PendingCall {
 
 const ACTIVE_TTL_SEC = 3 * 60 * 60; // longer than the 2h LiveKit token
 export const PENDING_TTL_SEC = 30;
+const CHAT_KEEP = 50;
+const CHAT_MAX_LEN = 500;
+const CHAT_PER_10S = 20;
+
+export interface ChatLine {
+  userId: string;
+  text: string;
+  at: number;
+}
 
 /** Call state in Redis so it survives restarts and works with several API instances. */
 @Injectable()
@@ -103,5 +112,33 @@ export class CallStateService {
       }
     }
     return dropped;
+  }
+
+  /**
+   * Stores one in-call chat line (last 50 kept for abuse reports) and returns the cleaned line, or
+   * null if it is empty or the sender is going too fast.
+   */
+  async pushChat(sessionId: string, userId: string, rawText: unknown): Promise<ChatLine | null> {
+    if (typeof rawText !== 'string') return null;
+    const text = rawText.replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX_LEN);
+    if (!text) return null;
+    const rlKey = `call:chatrl:${userId}`;
+    const n = await this.redis.incr(rlKey);
+    if (n === 1) await this.redis.expire(rlKey, 10);
+    if (n > CHAT_PER_10S) return null;
+    const line: ChatLine = { userId, text, at: Date.now() };
+    const key = `call:chat:${sessionId}`;
+    await this.redis
+      .multi()
+      .rpush(key, JSON.stringify(line))
+      .ltrim(key, -CHAT_KEEP, -1)
+      .expire(key, ACTIVE_TTL_SEC)
+      .exec();
+    return line;
+  }
+
+  async getChat(sessionId: string): Promise<ChatLine[]> {
+    const raw = await this.redis.lrange(`call:chat:${sessionId}`, 0, -1);
+    return raw.map((r) => JSON.parse(r) as ChatLine);
   }
 }

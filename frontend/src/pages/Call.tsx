@@ -6,6 +6,8 @@ import type { Room } from 'livekit-client';
 import { getSocket } from '../lib/socket';
 import { api } from '../lib/api';
 import { useAuth } from '../store/auth';
+import { useDevices } from '../store/devices';
+import { flagEmoji } from '../lib/flag';
 import { useFilters } from '../store/filters';
 import { useBillingStatus } from '../lib/billing';
 
@@ -56,6 +58,9 @@ export default function Call() {
   const scannerRef = useRef<NsfwScanner | null>(null);
   const flaggedSessionRef = useRef<string | null>(null);
   const [blurred, setBlurred] = useState(false);
+  const [chat, setChat] = useState<{ mine: boolean; text: string; at: number }[]>([]);
+  const [draft, setDraft] = useState('');
+  const skipRef = useRef<() => void>(() => {});
 
   const stopScanner = useCallback(() => {
     scannerRef.current?.stop();
@@ -118,11 +123,17 @@ export default function Call() {
 
     const onMatch = async (payload: MatchPayload) => {
       sessionRef.current = payload;
+      setChat([]);
+      setDraft('');
       setPeer(payload.peer);
       setState('connecting');
       // LiveKit SDK is lazy-loaded only when a call actually starts.
       const { Room: LKRoom, RoomEvent, Track } = await import('livekit-client');
-      const room = new LKRoom();
+      const { videoDeviceId, audioDeviceId } = useDevices.getState();
+      const room = new LKRoom({
+        ...(videoDeviceId ? { videoCaptureDefaults: { deviceId: videoDeviceId } } : {}),
+        ...(audioDeviceId ? { audioCaptureDefaults: { deviceId: audioDeviceId } } : {}),
+      });
       roomRef.current = room;
       room.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
@@ -178,6 +189,17 @@ export default function Call() {
       setLimitMsg(payload?.message ?? 'You have reached your daily limit.');
     };
 
+    const onChat = (msg: { text: string; at: number }) =>
+      setChat((c) => [...c, { mine: false, text: msg.text, at: msg.at }].slice(-50));
+
+    // The server drops sockets with an invalid/expired token (guest tokens last 4h).
+    const onServerDisconnect = (reason: string) => {
+      if (reason === 'io server disconnect') {
+        useAuth.getState().logout();
+        navigate('/');
+      }
+    };
+
     const onReplaced = () => {
       // Another tab/device started a call or search for this account.
       disconnectRoom();
@@ -200,6 +222,8 @@ export default function Call() {
     socket.on('call-started', onMatch);
     socket.on('peer-left', onPeerLeft);
     socket.on('match-error', onError);
+    socket.on('call-chat', onChat);
+    socket.on('disconnect', onServerDisconnect);
     socket.on('session-replaced', onReplaced);
     socket.on('filters-relaxed', onRelaxed);
     socket.on('limit-reached', onLimitReached);
@@ -212,6 +236,8 @@ export default function Call() {
       socket.off('call-started', onMatch);
       socket.off('peer-left', onPeerLeft);
       socket.off('match-error', onError);
+      socket.off('call-chat', onChat);
+      socket.off('disconnect', onServerDisconnect);
       socket.off('session-replaced', onReplaced);
       socket.off('filters-relaxed', onRelaxed);
       socket.off('limit-reached', onLimitReached);
@@ -242,6 +268,33 @@ export default function Call() {
     await disconnectRoom();
     start();
   }
+
+  skipRef.current = () => void skip();
+
+  function sendChat(e: React.FormEvent) {
+    e.preventDefault();
+    const text = draft.trim().slice(0, 500);
+    if (!text || state !== 'in-call') return;
+    getSocket().emit('call-chat', { text });
+    setChat((c) => [...c, { mine: true, text, at: Date.now() }].slice(-50));
+    setDraft('');
+  }
+
+  // Esc = Next (random mode). While the report sheet is open it closes that instead; in the chat box it just leaves the box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+        el.blur();
+        return;
+      }
+      if (showReport) setShowReport(false);
+      else if (!isDirect && state === 'in-call') skipRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showReport, isDirect, state]);
 
   async function end() {
     getSocket().emit('leave');
@@ -343,11 +396,41 @@ export default function Call() {
         />
 
         {state === 'in-call' && (
+          <div className="absolute bottom-4 left-4 right-36 flex max-w-sm flex-col gap-2">
+            <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
+              {chat.slice(-8).map((m, i) => (
+                <span
+                  key={`${m.at}-${i}`}
+                  className={`w-fit max-w-full break-words rounded-lg px-3 py-1.5 text-sm ${
+                    m.mine ? 'self-end bg-emerald-600/80' : 'bg-zinc-900/80'
+                  }`}
+                >
+                  {m.text}
+                </span>
+              ))}
+            </div>
+            <form onSubmit={sendChat} className="flex gap-2">
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                maxLength={500}
+                placeholder="Write a message"
+                aria-label="Chat message"
+                className="min-w-0 flex-1 rounded-xl bg-zinc-900/90 border border-zinc-700 px-3 py-2 text-sm focus:outline-none focus:border-emerald-500"
+              />
+              <button className="rounded-xl bg-zinc-800 px-3 text-sm" disabled={!draft.trim()}>
+                Send
+              </button>
+            </form>
+          </div>
+        )}
+
+        {state === 'in-call' && (
           <div className="absolute top-4 left-4 right-4 flex items-center justify-between">
             <span className="flex items-center gap-2">
               <span className="rounded-lg bg-zinc-900/80 px-3 py-1.5 text-sm">
                 {peer?.displayName ?? 'Stranger'}
-                {peer?.country ? ` \u00b7 ${peer.country}` : ''}
+                {peer?.country ? ` \u00b7 ${flagEmoji(peer.country)} ${peer.country}` : ''}
               </span>
               {!isDirect && !useAuth.getState().user?.isGuest && (
                 <button
@@ -389,7 +472,7 @@ export default function Call() {
         )}
       </div>
 
-      {/* Controls: Skip is always reachable in random mode */}
+      {/* Controls: Next is always reachable in random mode */}
       <div className="flex items-center justify-center gap-3 p-4">
         <button onClick={toggleMic} className={secondaryBtn}>
           {micOn ? 'Mute' : 'Unmute'}
@@ -402,7 +485,7 @@ export default function Call() {
             onClick={skip}
             className="rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-6 py-3 transition-colors"
           >
-            Skip
+            Next <span className="hidden sm:inline text-xs opacity-60">(Esc)</span>
           </button>
         )}
         <button

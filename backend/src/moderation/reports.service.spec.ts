@@ -18,6 +18,7 @@ function setup(overrides: { session?: any; rate?: number; existing?: any } = {})
   const redis: any = {
     incr: jest.fn().mockResolvedValue(overrides.rate ?? 1),
     expire: jest.fn(),
+    lrange: jest.fn().mockResolvedValue([]),
   };
   return { svc: new ReportsService(prisma, redis, {} as any), prisma };
 }
