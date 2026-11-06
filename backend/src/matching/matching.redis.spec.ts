@@ -103,6 +103,15 @@ d('matching (redis)', () => {
     expect(await svc.queueSize()).toBe(2); // b did not claim a
   });
 
+  it('never matches a blocked pair, in either direction, but still matches others', async () => {
+    await redis.sadd('mm:block:a', 'b'); // BlocksService mirrors both directions
+    await redis.sadd('mm:block:b', 'a');
+    await svc.findOrQueue(entry('a'));
+    expect(await svc.findOrQueue(entry('b'))).toBeNull(); // b skips a
+    expect((await svc.findOrQueue(entry('c')))?.userId).toBe('a'); // c is fine (claims the oldest, a)
+    expect(await svc.queueSize()).toBe(1); // b is still waiting
+  });
+
   it('drops expired queue entries', async () => {
     await redis.zadd('mm:queue', Date.now(), 'ghost'); // no entry hash
     expect(await svc.findOrQueue(entry('a'))).toBeNull();

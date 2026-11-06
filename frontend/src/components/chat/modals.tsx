@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { api } from '../../lib/api';
 import Modal from '../ui/Modal';
 import ChunkyButton from '../ui/ChunkyButton';
-import { api } from '../../lib/api';
 import { flagEmoji } from '../../lib/flag';
 import { inputCls } from '../../lib/ui';
 import { useAuth, User } from '../../store/auth';
@@ -215,6 +216,51 @@ export function LimitModal({ open, message, onClose }: { open: boolean; message:
         <ChunkyButton to={isGuest ? '/signup' : '/upgrade'}>{isGuest ? 'Create an account' : 'Go Premium'}</ChunkyButton>
         <button onClick={onClose} className="text-sm text-muted hover:text-ink">Maybe later</button>
       </div>
+    </Modal>
+  );
+}
+
+/** Confirm blocking the person you are talking to. They will never be matched with you again. */
+export function BlockSheet({ open, name, onClose, onConfirm }: { open: boolean; name: string; onClose: () => void; onConfirm: () => void }) {
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="block-title" className="max-w-sm">
+      <h2 id="block-title" className="mb-2 font-display text-xl font-semibold text-brand">Block {name}?</h2>
+      <p className="mb-4 text-sm text-muted">
+        You will move on to someone new, and you will never be matched with this person again. They are not told. You can
+        unblock them later in your Profile. To tell our moderators about rule-breaking, use Report instead (or as well).
+      </p>
+      <div className="flex gap-3">
+        <ChunkyButton variant="neutral" className="flex-1" onClick={onClose}>Cancel</ChunkyButton>
+        <ChunkyButton variant="danger" className="flex-1" onClick={onConfirm}>Block and skip</ChunkyButton>
+      </div>
+    </Modal>
+  );
+}
+
+interface BlockedUser { userId: string; displayName: string | null; country: string | null; blockedAt: string }
+
+/** Everyone you blocked, with an Unblock button. */
+export function BlockedModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['blocks'], queryFn: () => api<BlockedUser[]>('/blocks'), enabled: open });
+  async function unblock(userId: string) {
+    await api(`/blocks/${userId}`, { method: 'DELETE' });
+    void qc.invalidateQueries({ queryKey: ['blocks'] });
+  }
+  return (
+    <Modal open={open} onClose={onClose} labelledBy="blocked-title">
+      <h2 id="blocked-title" className="mb-3 font-display text-xl font-semibold text-brand">Blocked people</h2>
+      {isLoading && <p className="text-muted">Loading…</p>}
+      {isError && <p role="alert" className="text-danger">{(error as Error).message}</p>}
+      {data && data.length === 0 && <p className="text-muted">You have not blocked anyone.</p>}
+      <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">
+        {data?.map((b) => (
+          <li key={b.userId} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2">
+            <span className="font-semibold">{b.displayName ?? 'Someone'} {b.country && <span className="text-xs font-normal text-muted">{flagEmoji(b.country)} {b.country}</span>}</span>
+            <ChunkyButton size="sm" variant="neutral" onClick={() => void unblock(b.userId)}>Unblock</ChunkyButton>
+          </li>
+        ))}
+      </ul>
     </Modal>
   );
 }
