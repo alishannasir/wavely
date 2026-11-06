@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { BrowserRouter, Route, Routes, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 // Route-level code splitting: initial bundle only ships landing/auth.
 const Landing = lazy(() => import('./pages/Landing'));
@@ -7,9 +7,7 @@ const Login = lazy(() => import('./pages/Login'));
 const Signup = lazy(() => import('./pages/Signup'));
 const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
-const Home = lazy(() => import('./pages/Home'));
-const Start = lazy(() => import('./pages/Start'));
-const Call = lazy(() => import('./pages/Call'));
+const Chat = lazy(() => import('./pages/Chat'));
 const Upgrade = lazy(() => import('./pages/Upgrade'));
 const Friends = lazy(() => import('./pages/Friends'));
 const About = lazy(() => import('./pages/content/About'));
@@ -20,10 +18,10 @@ const Terms = lazy(() => import('./pages/content/Legal').then((m) => ({ default:
 const Privacy = lazy(() => import('./pages/content/Legal').then((m) => ({ default: m.Privacy })));
 const RegionBlocked = lazy(() => import('./pages/RegionBlocked'));
 
-/** Transitional: /chat = camera preview, or the call page for friend calls. Replaced by the merged chat screen. */
-function ChatRoute() {
-  const [params] = useSearchParams();
-  return params.get('friend') || params.get('accept') ? <Call /> : <Start />;
+/** Old URLs (/home, /start, /call) now live at /chat; keep the query string (?friend=, ?accept=). */
+function ToChat() {
+  const { search } = useLocation();
+  return <Navigate to={`/chat${search}`} replace />;
 }
 
 function Skeleton() {
@@ -53,10 +51,10 @@ export default function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/onboarding" element={<Onboarding />} />
-          <Route path="/home" element={<Home />} />
-          <Route path="/chat" element={<ChatRoute />} />
-          <Route path="/start" element={<Start />} />
-          <Route path="/call" element={<Call />} />
+          <Route path="/home" element={<ToChat />} />
+          <Route path="/chat" element={<Chat />} />
+          <Route path="/start" element={<ToChat />} />
+          <Route path="/call" element={<ToChat />} />
           <Route path="/upgrade" element={<Upgrade />} />
           <Route path="/friends" element={<Friends />} />
           <Route path="/unavailable" element={<RegionBlocked />} />

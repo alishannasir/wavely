@@ -26,7 +26,7 @@ export default function AuthCallback() {
       .then((user) => {
         useAuth.getState().setUser(user);
         // OAuth signups have no birthdate yet; onboarding collects it (18+ gate).
-        navigate(user.birthdate ? '/home' : '/onboarding');
+        navigate(user.birthdate ? '/chat' : '/onboarding');
       })
       .catch(() => navigate('/login'));
   }, [params, navigate]);

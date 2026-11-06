@@ -29,7 +29,7 @@ export function useIncomingCall() {
     if (!call) return;
     const { callId } = call;
     setCall(null);
-    navigate(`/call?accept=${callId}`);
+    navigate(`/chat?accept=${callId}`);
   };
 
   const decline = () => {
@@ -45,21 +45,19 @@ export function IncomingCallBanner() {
   const { call, accept, decline } = useIncomingCall();
   if (!call) return null;
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-20 mx-auto max-w-md rounded-2xl border border-emerald-500/40 bg-zinc-900 p-4 flex items-center justify-between gap-3 shadow-xl">
+    <div
+      role="alertdialog"
+      aria-label="Incoming call"
+      className="fixed bottom-4 left-4 right-4 z-40 mx-auto flex max-w-md items-center justify-between gap-3 rounded-2xl border border-line bg-white p-4 text-ink shadow-2xl"
+    >
       <span className="text-sm">
-        <strong>{call.from.displayName ?? 'A friend'}</strong> is calling...
+        <strong>{call.from.displayName ?? 'A friend'}</strong> is calling…
       </span>
       <span className="flex gap-2">
-        <button
-          onClick={accept}
-          className="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold px-4 py-2 text-sm transition-colors"
-        >
+        <button onClick={accept} className="rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-white shadow-[0_3px_0_rgb(12_74_153)] hover:bg-accent-700">
           Accept
         </button>
-        <button
-          onClick={decline}
-          className="rounded-lg bg-red-500 hover:bg-red-400 px-4 py-2 text-sm font-semibold transition-colors"
-        >
+        <button onClick={decline} className="rounded-lg bg-danger px-4 py-2 text-sm font-semibold text-white shadow-[0_3px_0_rgb(158_31_54)] hover:bg-danger-700">
           Decline
         </button>
       </span>
