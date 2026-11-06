@@ -19,6 +19,7 @@ import { EntitlementsService } from '../payments/entitlements.service';
 import { FriendsService } from '../friends/friends.service';
 import { PresenceService } from '../friends/presence.service';
 import { MessagesService } from '../friends/messages.service';
+import { ReportsService } from '../moderation/reports.service';
 import { BansService } from '../moderation/bans.service';
 import { clientIp, sanitizeDeviceId } from '../common/client-info';
 import { AuthService } from '../auth/auth.service';
@@ -64,6 +65,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly presence: PresenceService,
     private readonly messages: MessagesService,
     private readonly bans: BansService,
+    private readonly reports: ReportsService,
   ) {}
 
   onModuleInit() {
@@ -352,6 +354,25 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.emit('message-sent', message);
     } catch (err) {
       client.emit('message-error', { message: (err as Error).message });
+    }
+  }
+
+  /**
+   * The viewer's browser classified the stranger's video as explicit. Only accepted for the call this
+   * socket is actually in, and only about that call's peer. Becomes a moderator report.
+   */
+  @SubscribeMessage('nsfw-flag')
+  async nsfwFlag(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload?: { sessionId?: string; score?: number; evidenceImage?: string },
+  ) {
+    const info = await this.callState.getBySocket(client.id);
+    if (!info || !payload || info.sessionId !== payload.sessionId) return;
+    const score = typeof payload.score === 'number' && Number.isFinite(payload.score) ? payload.score : 0;
+    try {
+      await this.reports.createAutoNsfw(info.userId, info.peerUserId, info.sessionId, score, payload.evidenceImage);
+    } catch {
+      /* rate limited or invalid: the client already blurred locally, nothing to tell it */
     }
   }
 

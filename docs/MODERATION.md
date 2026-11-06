@@ -19,3 +19,9 @@
 
 ## Rules
 Users must accept the rules (`rulesAcceptedAt`) and have a birthdate with age >= 18 before matching or friend-calling.
+
+## NSFW scanning (client-side, Phase 4)
+- While in a call, the viewer's browser samples the stranger's video every 3s and classifies it with the bundled NSFWJS MobileNetV2 model (lazy-loaded, ~3.5 MB, no CDN, nothing leaves the device). `Porn + Hentai >= 0.7` on two consecutive samples hides the video (blur) and lets the viewer skip or show it anyway. "Sexy" is ignored (too many false positives).
+- The client then sends `nsfw-flag`. The server only accepts it for the call that socket is in and about that call's peer, and turns it into a `Report` with `source = AUTO_NSFW`, reason `NUDITY`, the score and the frame as evidence. It uses the same rules as manual reports: one per reporter/target/session, its own rate limit (30/hour), distinct aged reporters for flagging and suspension. A modified client can therefore do no more harm than a malicious reporter.
+- Limits: it protects the viewer and produces evidence, but it cannot stop a determined sender, and accuracy is modest (false positives and misses). Treat `AUTO_NSFW` reports as a signal for moderators, not proof.
+- Upgrade path: swap in a server-side moderation API (Hive, Sightengine, AWS Rekognition) by sampling frames from LiveKit Egress and calling `ReportsService.createAutoNsfw`-style logic. Needs an account and a budget.

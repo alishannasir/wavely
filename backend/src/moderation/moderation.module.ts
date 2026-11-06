@@ -9,6 +9,6 @@ import { BanGuard } from './ban.guard';
 @Module({
   controllers: [ReportsController, AdminController],
   providers: [ReportsService, BansService, { provide: APP_GUARD, useClass: BanGuard }],
-  exports: [BansService],
+  exports: [BansService, ReportsService],
 })
 export class ModerationModule {}
