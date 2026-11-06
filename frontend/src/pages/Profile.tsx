@@ -76,6 +76,12 @@ export default function Profile() {
           <Row label="Camera & microphone" onClick={() => setShowDevices(true)} />
         </Group>
 
+        {(user.role === 'MODERATOR' || user.role === 'ADMIN') && (
+          <Group>
+            <Row label="Moderation" value={user.role} to="/admin" />
+          </Group>
+        )}
+
         <Group>
           {!user.isGuest && <Row label="Friends" to="/friends" />}
           <Row label="Premium" value={plan === 'Premium' ? 'Active' : undefined} to="/upgrade" />

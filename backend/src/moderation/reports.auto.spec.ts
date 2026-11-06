@@ -11,7 +11,7 @@ function setup() {
     user: { updateMany: jest.fn(), update: jest.fn() },
   };
   const redis: any = { incr: jest.fn().mockResolvedValue(1), expire: jest.fn(), lrange: jest.fn().mockResolvedValue([]) };
-  return { svc: new ReportsService(prisma, redis, {} as any), prisma, redis };
+  return { svc: new ReportsService(prisma, redis, {} as any, { log: jest.fn() } as any), prisma, redis };
 }
 
 describe('ReportsService.createAutoNsfw', () => {
@@ -94,5 +94,14 @@ describe('auto reports vs suspension', () => {
     prisma.report.findUnique.mockResolvedValue({ id: 'm1', status: 'OPEN', source: 'USER' });
     await svc.createAutoNsfw('a', 'b', 's1', 0.9);
     expect(prisma.report.update).not.toHaveBeenCalled();
+  });
+  it('puts the chat log in time order even if lines were stored out of order', async () => {
+    const { svc, prisma, redis } = setup();
+    redis.lrange.mockResolvedValue([
+      JSON.stringify({ userId: 'b', text: 'second', at: 20 }),
+      JSON.stringify({ userId: 'a', text: 'first', at: 10 }),
+    ]);
+    await svc.createAutoNsfw('a', 'b', 's1', 0.9);
+    expect(prisma.report.create.mock.calls[0][0].data.chatLog.map((m: any) => m.text)).toEqual(['first', 'second']);
   });
 });

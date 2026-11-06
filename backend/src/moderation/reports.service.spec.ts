@@ -20,7 +20,7 @@ function setup(overrides: { session?: any; rate?: number; existing?: any } = {})
     expire: jest.fn(),
     lrange: jest.fn().mockResolvedValue([]),
   };
-  return { svc: new ReportsService(prisma, redis, {} as any), prisma };
+  return { svc: new ReportsService(prisma, redis, {} as any, { log: jest.fn() } as any), prisma };
 }
 
 const dto = { reportedUserId: 'b', sessionId: 's1', reasonCode: 'NUDITY' as const };

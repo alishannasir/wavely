@@ -9,6 +9,12 @@ const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Profile = lazy(() => import('./pages/Profile'));
+const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
+const AdminQueue = lazy(() => import('./pages/admin/Queue'));
+const AdminReport = lazy(() => import('./pages/admin/ReportDetail'));
+const AdminUsers = lazy(() => import('./pages/admin/Users'));
+const AdminUser = lazy(() => import('./pages/admin/UserDetail'));
+const AdminAudit = lazy(() => import('./pages/admin/Audit').then((m) => ({ default: m.default })));
 const Upgrade = lazy(() => import('./pages/Upgrade'));
 const Friends = lazy(() => import('./pages/Friends'));
 const About = lazy(() => import('./pages/content/About'));
@@ -57,6 +63,13 @@ export default function App() {
           <Route path="/start" element={<ToChat />} />
           <Route path="/call" element={<ToChat />} />
           <Route path="/me" element={<Profile />} />
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminQueue />} />
+            <Route path="reports/:id" element={<AdminReport />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="users/:id" element={<AdminUser />} />
+            <Route path="audit" element={<AdminAudit />} />
+          </Route>
           <Route path="/upgrade" element={<Upgrade />} />
           <Route path="/friends" element={<Friends />} />
           <Route path="/unavailable" element={<RegionBlocked />} />

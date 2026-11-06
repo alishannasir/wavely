@@ -180,6 +180,12 @@ model Report {
   // USER = filed by a person, AUTO_NSFW = raised by the viewer's on-device classifier.
   source         String        @default("USER")
   nsfwScore      Float?
+  // Legal hold: evidence is kept (never purged) until an administrator releases it. Used when a
+  // report is escalated (e.g. suspected child abuse) so it can be preserved and reported.
+  legalHold      Boolean       @default(false)
+  escalatedAt    DateTime?
+  escalatedById  String?
+  escalationNote String?
   reporter       User         @relation("ReportReporter", fields: [reporterId], references: [id])
   reported       User         @relation("ReportReported", fields: [reportedUserId], references: [id])
   session        CallSession? @relation(fields: [sessionId], references: [id])
@@ -224,4 +230,20 @@ model Ban {
 
   @@unique([type, value])
   @@map("bans")
+}
+
+// Every moderator/admin action, for accountability. Never edited or deleted by the app.
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String
+  action       String   // REPORT_RESOLVED, REPORT_ESCALATED, HOLD_RELEASED, USER_STATUS, ROLE_CHANGED, ...
+  targetUserId String?
+  reportId     String?
+  meta         Json?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetUserId])
+  @@index([reportId])
+  @@map("audit_logs")
 }

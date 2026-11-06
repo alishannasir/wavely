@@ -5,6 +5,7 @@ export interface User {
   id: string;
   email: string | null;
   isGuest?: boolean;
+  role?: 'USER' | 'MODERATOR' | 'ADMIN';
   displayName?: string | null;
   avatarUrl?: string | null;
   birthdate?: string | null;

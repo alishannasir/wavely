@@ -11,6 +11,7 @@ import { Prisma } from '@prisma/client';
 import Redis from 'ioredis';
 import { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { BansService } from './bans.service';
+import { AuditService } from './audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS } from '../redis/redis.module';
 import { CreateReportDto } from './dto/create-report.dto';
@@ -21,6 +22,11 @@ const SEVERE_REASONS = ['NUDITY', 'MINOR_CONCERN'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WINDOW_MS = DAY_MS;
 const FLAG_THRESHOLD = 3;
+/** Evidence for reports that led to a suspension/ban is kept longer (default 90 days). */
+function actionedRetentionDays(): number {
+  const n = parseInt(process.env.EVIDENCE_ACTIONED_RETENTION_DAYS ?? '90', 10);
+  return Number.isFinite(n) && n > 0 ? n : 90;
+}
 const AUTO_REPORTS_PER_HOUR = 30;
 const EVIDENCE_IMAGE_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
 
@@ -37,6 +43,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly bans: BansService,
+    private readonly audit: AuditService,
   ) {}
 
   onModuleInit() {
@@ -51,7 +58,12 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
   /** Retention: evidence is deleted EVIDENCE_RETENTION_DAYS (default 30) after the report. */
   async purgeExpiredEvidence() {
     return this.prisma.report.updateMany({
-      where: { evidenceExpiresAt: { lt: new Date() } },
+      where: {
+        evidenceExpiresAt: { lt: new Date() },
+        // Never delete evidence under legal hold, or of a possible-minor report nobody has decided yet.
+        legalHold: false,
+        NOT: { reasonCode: 'MINOR_CONCERN', status: { not: 'RESOLVED' } },
+      },
       data: { evidenceImage: null, chatLog: Prisma.DbNull, evidenceExpiresAt: null },
     });
   }
@@ -166,7 +178,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       } catch {
         return [];
       }
-    });
+    }).sort((a, b) => a.at - b.at); // messages sent at almost the same moment can be stored out of order
   }
 
   /**
@@ -221,36 +233,70 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
 
   // ---- Moderator review queue ----
 
-  listForReview(status: 'OPEN' | 'REVIEWING' | 'RESOLVED' = 'OPEN', take = 50) {
-    return this.prisma.report.findMany({
-      where: { status },
-      orderBy: { createdAt: 'asc' },
-      take: Math.min(take, 100),
-      select: {
-        id: true,
-        reasonCode: true,
-        status: true,
-        createdAt: true,
-        sessionId: true,
-        source: true,
-        nsfwScore: true,
-        evidenceExpiresAt: true,
-        reported: { select: { id: true, displayName: true, status: true, country: true, flaggedUntil: true } },
-        reporter: { select: { id: true, displayName: true, createdAt: true } },
-      },
-    });
+  async listForReview(filter: {
+    status?: 'OPEN' | 'REVIEWING' | 'RESOLVED';
+    reason?: string;
+    source?: string;
+    hold?: string;
+    skip?: number;
+    take?: number;
+  }) {
+    const where: Prisma.ReportWhereInput = {
+      status: filter.status ?? 'OPEN',
+      ...(filter.reason ? { reasonCode: filter.reason as any } : {}),
+      ...(filter.source ? { source: filter.source } : {}),
+      ...(filter.hold === 'true' ? { legalHold: true } : {}),
+    };
+    const [items, total] = await Promise.all([
+      this.prisma.report.findMany({
+        where,
+        // Serious reasons first, then oldest first
+        orderBy: [{ legalHold: 'desc' }, { createdAt: 'asc' }],
+        skip: filter.skip ?? 0,
+        take: Math.min(filter.take ?? 50, 100),
+        select: {
+          id: true,
+          reasonCode: true,
+          status: true,
+          createdAt: true,
+          sessionId: true,
+          source: true,
+          nsfwScore: true,
+          legalHold: true,
+          evidenceExpiresAt: true,
+          reported: { select: { id: true, displayName: true, status: true, country: true, flaggedUntil: true } },
+          reporter: { select: { id: true, displayName: true, createdAt: true } },
+        },
+      }),
+      this.prisma.report.count({ where }),
+    ]);
+    return { total, items };
+  }
+
+  async counts() {
+    const [open, reviewing, hold, minor] = await Promise.all([
+      this.prisma.report.count({ where: { status: 'OPEN' } }),
+      this.prisma.report.count({ where: { status: 'REVIEWING' } }),
+      this.prisma.report.count({ where: { legalHold: true } }),
+      this.prisma.report.count({ where: { status: { not: 'RESOLVED' }, reasonCode: 'MINOR_CONCERN' } }),
+    ]);
+    return { open, reviewing, legalHold: hold, openMinorConcern: minor };
   }
 
   async detail(reportId: string) {
     const report = await this.prisma.report.findUnique({
       where: { id: reportId },
       include: {
-        reported: { select: { id: true, displayName: true, status: true, country: true, flaggedUntil: true } },
+        reported: { select: { id: true, displayName: true, status: true, country: true, flaggedUntil: true, createdAt: true, isGuest: true } },
         reporter: { select: { id: true, displayName: true, createdAt: true } },
       },
     });
     if (!report) throw new NotFoundException('Report not found');
-    return report;
+    const [history, auditTrail] = await Promise.all([
+      this.prisma.report.groupBy({ by: ['status'], where: { reportedUserId: report.reportedUserId }, _count: true }),
+      this.audit.list({ reportId, take: 50 }),
+    ]);
+    return { ...report, reportedUserReportCounts: history.map((h) => ({ status: h.status, count: h._count })), audit: auditTrail.items };
   }
 
   async resolve(
@@ -273,15 +319,79 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
       await this.bans.liftUserFootprint(report.reportedUserId);
     }
 
+    const open = await this.prisma.report.findMany({
+      where: { reportedUserId: report.reportedUserId, status: { not: 'RESOLVED' } },
+      select: { id: true },
+    });
+    const now = new Date();
+    // Evidence behind an actual suspension/ban is kept longer than the default.
+    const keepUntil =
+      action === 'SUSPEND' || action === 'BAN' ? new Date(now.getTime() + actionedRetentionDays() * DAY_MS) : undefined;
+
     await this.prisma.$transaction([
       this.prisma.report.updateMany({
-        where: { reportedUserId: report.reportedUserId, status: { not: 'RESOLVED' } },
-        data: { status: 'RESOLVED', reviewedById: moderatorId, reviewedAt: new Date(), resolution: action },
+        where: { id: { in: open.map((r) => r.id) } },
+        data: {
+          status: 'RESOLVED',
+          reviewedById: moderatorId,
+          reviewedAt: now,
+          resolution: action,
+        },
       }),
-      ...(userStatus
-        ? [this.prisma.user.update({ where: { id: report.reportedUserId }, data: { status: userStatus, flaggedUntil: null } })]
-        : [this.prisma.user.update({ where: { id: report.reportedUserId }, data: { flaggedUntil: null } })]),
+      // Longer retention for actioned reports, but never touch evidence under legal hold.
+      ...(keepUntil
+        ? [
+            this.prisma.report.updateMany({
+              where: { id: { in: open.map((r) => r.id) }, legalHold: false },
+              data: { evidenceExpiresAt: keepUntil },
+            }),
+          ]
+        : []),
+      this.prisma.user.update({
+        where: { id: report.reportedUserId },
+        data: userStatus ? { status: userStatus, flaggedUntil: null } : { flaggedUntil: null },
+      }),
     ]);
+    await this.audit.log(moderatorId, 'REPORT_RESOLVED', {
+      targetUserId: report.reportedUserId,
+      reportId,
+      meta: { action, reportsResolved: open.length },
+    });
     return { ok: true, action };
+  }
+
+  /**
+   * Escalation: the evidence is put under legal hold (never purged) so it can be preserved and
+   * reported to the proper authority (e.g. NCMEC / IWF). Filing the report is a manual step.
+   */
+  async escalate(reportId: string, moderatorId: string, note?: string) {
+    const report = await this.prisma.report.findUnique({ where: { id: reportId } });
+    if (!report) throw new NotFoundException('Report not found');
+    await this.prisma.report.update({
+      where: { id: reportId },
+      data: {
+        legalHold: true,
+        escalatedAt: new Date(),
+        escalatedById: moderatorId,
+        escalationNote: note ?? null,
+        evidenceExpiresAt: null,
+        status: report.status === 'OPEN' ? 'REVIEWING' : report.status,
+      },
+    });
+    await this.audit.log(moderatorId, 'REPORT_ESCALATED', { targetUserId: report.reportedUserId, reportId, meta: { note: note ?? null } });
+    return { ok: true, legalHold: true };
+  }
+
+  /** Administrators only: ends the hold; the normal retention period then applies again. */
+  async releaseHold(reportId: string, adminId: string) {
+    const report = await this.prisma.report.findUnique({ where: { id: reportId } });
+    if (!report) throw new NotFoundException('Report not found');
+    if (!report.legalHold) return { ok: true, legalHold: false };
+    await this.prisma.report.update({
+      where: { id: reportId },
+      data: { legalHold: false, evidenceExpiresAt: new Date(Date.now() + retentionDays() * DAY_MS) },
+    });
+    await this.audit.log(adminId, 'HOLD_RELEASED', { targetUserId: report.reportedUserId, reportId });
+    return { ok: true, legalHold: false };
   }
 }
