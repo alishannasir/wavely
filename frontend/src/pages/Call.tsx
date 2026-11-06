@@ -31,6 +31,8 @@ const REPORT_REASONS = [
   { code: 'OTHER', label: 'Other' },
 ] as const;
 
+class StaleMatch extends Error {}
+
 const secondaryBtn =
   'rounded-xl border border-zinc-700 hover:border-zinc-500 px-4 py-3 transition-colors';
 
@@ -58,6 +60,9 @@ export default function Call() {
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLDivElement>(null);
   const scannerRef = useRef<NsfwScanner | null>(null);
+  // Bumped whenever the current call ends or a new one starts, so a slow connection attempt for an
+  // older match can tell it is stale and stop instead of overwriting the current state.
+  const genRef = useRef(0);
   const flaggedSessionRef = useRef<string | null>(null);
   const [blurred, setBlurred] = useState(false);
   const [chat, setChat] = useState<{ mine: boolean; text: string; at: number }[]>([]);
@@ -73,9 +78,11 @@ export default function Call() {
   }, []);
 
   const disconnectRoom = useCallback(async () => {
+    genRef.current++;
     stopScanner();
-    await roomRef.current?.disconnect();
+    const room = roomRef.current;
     roomRef.current = null;
+    await room?.disconnect();
   }, [stopScanner]);
 
   const start = useCallback(() => {
@@ -126,37 +133,72 @@ export default function Call() {
     };
 
     const onMatch = async (payload: MatchPayload) => {
+      const gen = ++genRef.current;
+      const stale = () => gen !== genRef.current;
+      // A new match replaces whatever room is still open.
+      stopScanner();
+      const previous = roomRef.current;
+      roomRef.current = null;
+      void previous?.disconnect();
+
       sessionRef.current = payload;
       setLimitAt(typeof payload.limitSeconds === 'number' ? Date.now() + payload.limitSeconds * 1000 : null);
       setChat([]);
       setDraft('');
       setPeer(payload.peer);
       setState('connecting');
-      // LiveKit SDK is lazy-loaded only when a call actually starts.
-      const { Room: LKRoom, RoomEvent, Track } = await import('livekit-client');
-      const { videoDeviceId, audioDeviceId } = useDevices.getState();
-      const room = new LKRoom({
-        ...(videoDeviceId ? { videoCaptureDefaults: { deviceId: videoDeviceId } } : {}),
-        ...(audioDeviceId ? { audioCaptureDefaults: { deviceId: audioDeviceId } } : {}),
-      });
-      roomRef.current = room;
-      room.on(RoomEvent.TrackSubscribed, (track) => {
-        if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
-          track.attach(remoteVideoRef.current);
-          startScanner();
-        } else if (track.kind === Track.Kind.Audio && audioRef.current) {
-          audioRef.current.appendChild(track.attach());
+
+      let room: Room | null = null;
+      try {
+        // LiveKit SDK is lazy-loaded only when a call actually starts.
+        const { Room: LKRoom, RoomEvent, Track } = await import('livekit-client');
+        if (stale()) return;
+        const { videoDeviceId, audioDeviceId } = useDevices.getState();
+        room = new LKRoom({
+          ...(videoDeviceId ? { videoCaptureDefaults: { deviceId: videoDeviceId } } : {}),
+          ...(audioDeviceId ? { audioCaptureDefaults: { deviceId: audioDeviceId } } : {}),
+        });
+        roomRef.current = room;
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (stale()) return;
+          if (track.kind === Track.Kind.Video && remoteVideoRef.current) {
+            track.attach(remoteVideoRef.current);
+            startScanner();
+          } else if (track.kind === Track.Kind.Audio && audioRef.current) {
+            audioRef.current.appendChild(track.attach());
+          }
+        });
+        await room.connect(payload.url, payload.token);
+        if (stale()) throw new StaleMatch();
+        await room.localParticipant.enableCameraAndMicrophone();
+        if (stale()) throw new StaleMatch();
+        const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
+        if (camPub?.videoTrack && localVideoRef.current) {
+          camPub.videoTrack.attach(localVideoRef.current);
         }
-      });
-      await room.connect(payload.url, payload.token);
-      await room.localParticipant.enableCameraAndMicrophone();
-      const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (camPub?.videoTrack && localVideoRef.current) {
-        camPub.videoTrack.attach(localVideoRef.current);
+        setMicOn(true);
+        setCamOn(true);
+        setState('in-call');
+      } catch (err) {
+        // The match was superseded (peer left, skipped, new match): just release the half-open room.
+        if (err instanceof StaleMatch || stale()) {
+          if (roomRef.current !== room) void room?.disconnect();
+          return;
+        }
+        // Real failure (camera/mic denied, LiveKit unreachable): don't leave the other person hanging.
+        const name = (err as DOMException)?.name;
+        socket.emit('leave');
+        await disconnectRoom();
+        setState('connecting');
+        setNotice(
+          name === 'NotAllowedError'
+            ? 'Camera or microphone access was blocked. Check your browser permissions.'
+            : name === 'NotFoundError'
+              ? 'No camera or microphone found.'
+              : 'Could not connect to the call. Please try again.',
+        );
+        setTimeout(() => navigate(isDirect ? '/friends' : '/start'), 2500);
       }
-      setMicOn(true);
-      setCamOn(true);
-      setState('in-call');
     };
 
     const onPeerLeft = async () => {
