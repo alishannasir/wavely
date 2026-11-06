@@ -59,7 +59,7 @@ export class AuthController {
   async googleCallback(@Req() req: any, @Res() res: Response) {
     const { user } = await this.auth.oauthLogin(req.user, req.country ?? null);
     const code = await this.auth.createLoginCode(user.id);
-    const frontend = process.env.FRONTEND_URL ?? 'http://localhost:5173';
+    const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
     res.redirect(`${frontend}/auth/callback?code=${code}`);
   }
 

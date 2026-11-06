@@ -51,7 +51,7 @@ const userRoom = (userId: string) => `user:${userId}`;
  * All shared state (queue, active calls, pending calls, presence) lives in Redis, and
  * Socket.IO uses the Redis adapter, so several API instances can run side by side.
  */
-@WebSocketGateway({ cors: { origin: process.env.FRONTEND_URL ?? 'http://localhost:5173' } })
+@WebSocketGateway({ cors: { origin: process.env.FRONTEND_URL || 'http://localhost:5173' } })
 export class MatchingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
 {
@@ -112,8 +112,11 @@ export class MatchingGateway
             where: { id: userId },
             data: { ...(deviceId ? { lastDeviceId: deviceId } : {}), ...(ip ? { lastIp: ip } : {}) },
           })
-          .catch(() => null);
-        if (!me) return next(new Error('UNAUTHORIZED')); // user no longer exists
+          .catch((err: { code?: string }) => {
+            if (err?.code === 'P2025') return null; // record not found: the user was deleted
+            throw err; // anything else is a temporary database problem, not a reason to log the user out
+          });
+        if (!me) return next(new Error('UNAUTHORIZED'));
         if (me.status === 'BANNED') return next(new Error('BANNED'));
 
         socket.data.userId = userId;
