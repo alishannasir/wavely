@@ -210,6 +210,19 @@ d('presence (redis)', () => {
     await redis.quit();
   });
 
+  it('self-heals: users nobody refreshes expire, heartbeats keep live ones', async () => {
+    await presence.markOnline('live', 's1');
+    await presence.markOnline('ghost', 's2');
+    // the instance holding "ghost" crashed: its heartbeat is 5 minutes old
+    await redis.zadd('presence:online:v2', Date.now() - 5 * 60_000, 'ghost');
+    expect(await presence.isOnline('ghost')).toBe(false);
+    expect(await presence.onlineCount()).toBe(1);
+    expect(await presence.onlineMap(['live', 'ghost', 'nobody'])).toEqual({ live: true, ghost: false, nobody: false });
+    await presence.heartbeat(['live']); // also prunes entries nobody refreshes
+    expect(await redis.zscore('presence:online:v2', 'ghost')).toBeNull();
+    expect(await presence.isOnline('live')).toBe(true);
+  });
+
   it('stays online until the last tab closes', async () => {
     await presence.markOnline('u', 't1');
     await presence.markOnline('u', 't2');

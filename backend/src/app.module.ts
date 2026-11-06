@@ -11,10 +11,15 @@ import { ModerationModule } from './moderation/moderation.module';
 import { GeoMiddleware } from './common/geo/geo.middleware';
 import { GeoGuard } from './common/geo/geo.guard';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './common/throttler.guard';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
+    // Per-IP limit for HTTP (in memory, so per API instance). Auth routes have stricter limits.
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: parseInt(process.env.THROTTLE_LIMIT || '120', 10) }]),
     PrismaModule,
     RedisModule,
     AuthModule,
@@ -24,7 +29,11 @@ import { APP_GUARD } from '@nestjs/core';
     PaymentsModule,
     ModerationModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: GeoGuard }],
+  controllers: [HealthController],
+  providers: [
+    { provide: APP_GUARD, useClass: GeoGuard },
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
