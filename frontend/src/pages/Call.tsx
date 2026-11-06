@@ -16,6 +16,8 @@ interface MatchPayload {
   token: string;
   url: string;
   sessionId: string;
+  /** Seconds of free chat time left today (null = unlimited). The server ends the call at 0. */
+  limitSeconds?: number | null;
   peer: { userId: string; displayName: string | null; country: string | null };
 }
 
@@ -61,6 +63,8 @@ export default function Call() {
   const [chat, setChat] = useState<{ mine: boolean; text: string; at: number }[]>([]);
   const [draft, setDraft] = useState('');
   const skipRef = useRef<() => void>(() => {});
+  const [limitAt, setLimitAt] = useState<number | null>(null); // epoch ms when free time runs out
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   const stopScanner = useCallback(() => {
     scannerRef.current?.stop();
@@ -123,6 +127,7 @@ export default function Call() {
 
     const onMatch = async (payload: MatchPayload) => {
       sessionRef.current = payload;
+      setLimitAt(typeof payload.limitSeconds === 'number' ? Date.now() + payload.limitSeconds * 1000 : null);
       setChat([]);
       setDraft('');
       setPeer(payload.peer);
@@ -186,6 +191,8 @@ export default function Call() {
     };
 
     const onLimitReached = (payload: { message?: string }) => {
+      void disconnectRoom(); // the server already ended the call; leave the room and show the upgrade prompt
+      setLimitAt(null);
       setLimitMsg(payload?.message ?? 'You have reached your daily limit.');
     };
 
@@ -279,6 +286,18 @@ export default function Call() {
     setChat((c) => [...c, { mine: true, text, at: Date.now() }].slice(-50));
     setDraft('');
   }
+
+  // Countdown of free chat time during a call (the server enforces the real limit).
+  useEffect(() => {
+    if (limitAt === null || state !== 'in-call') {
+      setSecondsLeft(null);
+      return;
+    }
+    const tick = () => setSecondsLeft(Math.max(0, Math.round((limitAt - Date.now()) / 1000)));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [limitAt, state]);
 
   // Esc = Next (random mode). While the report sheet is open it closes that instead; in the chat box it just leaves the box.
   useEffect(() => {
@@ -442,6 +461,14 @@ export default function Call() {
                 </button>
               )}
             </span>
+            {secondsLeft !== null && (
+              <span
+                className={`rounded-lg bg-zinc-900/80 px-3 py-1.5 text-sm tabular-nums ${secondsLeft <= 60 ? 'text-amber-400' : 'text-zinc-300'}`}
+                title="Free chat time left today"
+              >
+                {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} left
+              </span>
+            )}
             {/* Report is pinned and always visible during a call */}
             <button
               onClick={() => setShowReport(true)}

@@ -43,6 +43,13 @@ Login is optional. **Guests** (`POST /api/auth/guest`, 18+ and rules attested, 4
 
 Google login redirects back with a single-use 60-second `?code=`, which the frontend exchanges via `POST /api/auth/exchange`. JWTs never appear in URLs.
 
+## Free-tier limits
+
+Caps come from the `plan_limits` table (never hardcoded). They apply to random matches **and** friend calls.
+- A match is counted when the call starts; minutes are billed when it ends (rounded to the minute, instant skips are free).
+- When a call starts, its deadline is whoever has the least free time left. LiveKit tokens are issued only for that long, and the server ends the call at the deadline: it sends `limit-reached`, removes both people from the LiveKit room (`LIVEKIT_URL` must be reachable with the API key) and tells the other person `peer-left`.
+- The call screen shows a countdown from `limitSeconds` in the match payload.
+
 ## Layout
 
 - `backend/src`: `auth`, `users`, `matching` (Socket.IO gateway, Redis queue, LiveKit tokens), `friends`, `payments`, `moderation`, `common/geo`

@@ -14,7 +14,8 @@ import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService, QueueEntry, RELAX_COUNTRY_MS, RELAX_GENDER_MS } from './matching.service';
 import { CallStateService } from './call-state.service';
-import { LivekitService } from './livekit.service';
+import { LivekitService, tokenTtlSeconds } from './livekit.service';
+import { computeCallDeadline } from './call-limits';
 import { EntitlementsService } from '../payments/entitlements.service';
 import { FriendsService } from '../friends/friends.service';
 import { PresenceService } from '../friends/presence.service';
@@ -39,6 +40,8 @@ interface Participant {
 
 const MAX_MATCH_ATTEMPTS = 50; // each stale peer is removed from the queue, so this always ends
 const REMATCH_TICK_MS = 5000;
+const DEADLINE_TICK_MS = 5000;
+const LIMIT_MESSAGE = 'You have used your free chat time for today. Upgrade for unlimited chat.';
 
 const userRoom = (userId: string) => `user:${userId}`;
 
@@ -53,6 +56,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
   server!: Server;
 
   private rematchTimer?: NodeJS.Timeout;
+  private deadlineTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly jwt: JwtService,
@@ -71,10 +75,13 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
   onModuleInit() {
     this.rematchTimer = setInterval(() => void this.rematchTick().catch(() => undefined), REMATCH_TICK_MS);
     this.rematchTimer.unref();
+    this.deadlineTimer = setInterval(() => void this.deadlineTick().catch(() => undefined), DEADLINE_TICK_MS);
+    this.deadlineTimer.unref();
   }
 
   onModuleDestroy() {
     if (this.rematchTimer) clearInterval(this.rematchTimer);
+    if (this.deadlineTimer) clearInterval(this.deadlineTimer);
   }
 
   async handleConnection(client: Socket) {
@@ -206,9 +213,38 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     for (let i = 0; i < MAX_MATCH_ATTEMPTS; i++) {
       const peer = await this.matching.findOrQueue(entry, keepQueuedAt);
       if (!peer) return null;
-      if (await this.isSocketAlive(peer.socketId)) return peer;
+      if ((await this.isSocketAlive(peer.socketId)) && (await this.peerEligible(peer))) return peer;
     }
     return null;
+  }
+
+  /**
+   * A queued peer may have used up their free time (or been suspended) since they queued. They were
+   * already removed from the queue, so just tell them and let the caller look for someone else.
+   */
+  private async peerEligible(peer: QueueEntry): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({ where: { id: peer.userId } });
+    if (!user || user.status !== 'ACTIVE') {
+      this.server.to(peer.socketId).emit('match-error', { message: 'Your account cannot join matches right now.' });
+      return false;
+    }
+    const check = await this.entitlements.canStartMatch(user);
+    if (!check.ok) {
+      this.server.to(peer.socketId).emit('limit-reached', { message: check.reason });
+      return false;
+    }
+    return true;
+  }
+
+  /** Ends calls whose free-tier minutes ran out: tell the user, remove them from LiveKit, close the session. */
+  private async deadlineTick() {
+    for (const due of await this.callState.claimDue(Date.now())) {
+      const limitedIdx = due.users.indexOf(due.limitedUserId ?? '');
+      const limitedSocket = limitedIdx >= 0 ? due.sockets[limitedIdx] : due.sockets[0];
+      this.server.to(limitedSocket).emit('limit-reached', { message: LIMIT_MESSAGE });
+      void this.livekit.removeParticipants(`room_${due.sessionId}`, due.users);
+      await this.endCallBySocketId(limitedSocket);
+    }
   }
 
   /**
@@ -267,6 +303,11 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.emit('call-unavailable', { message: 'Your account cannot place calls right now.' });
       return;
     }
+    const check = await this.entitlements.canStartMatch(user);
+    if (!check.ok) {
+      client.emit('limit-reached', { message: check.reason });
+      return;
+    }
     await this.takeOver(userId, client);
     await this.matching.removeFromQueue(userId);
     const callId = randomUUID();
@@ -315,6 +356,20 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       return;
     }
 
+    const [callerCheck, calleeCheck] = await Promise.all([
+      this.entitlements.canStartMatch(caller),
+      this.entitlements.canStartMatch(callee),
+    ]);
+    if (!calleeCheck.ok) {
+      client.emit('limit-reached', { message: calleeCheck.reason });
+      this.server.to(pending.callerSocketId).emit('call-unavailable', { message: 'Your friend cannot take calls right now.' });
+      return;
+    }
+    if (!callerCheck.ok) {
+      this.server.to(pending.callerSocketId).emit('limit-reached', { message: callerCheck.reason });
+      client.emit('call-unavailable', { message: 'The caller cannot place calls right now.' });
+      return;
+    }
     await this.takeOver(callee.id, client);
     await this.matching.removeFromQueue(callee.id);
     await this.startCall(
@@ -406,6 +461,18 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   /** Shared by random matches and direct friend calls. */
   private async startCall(event: 'match-found' | 'call-started', a: Participant, b: Participant) {
+    // Free-tier time left decides the call deadline and how long the LiveKit tokens are valid.
+    const users = await this.prisma.user.findMany({ where: { id: { in: [a.userId, b.userId] } } });
+    const left = await Promise.all(
+      [a, b].map(async (p) => {
+        const user = users.find((u) => u.id === p.userId);
+        return { userId: p.userId, remainingMs: user ? await this.entitlements.remainingMs(user) : null };
+      }),
+    );
+    const now = Date.now();
+    const deadline = computeCallDeadline(left[0], left[1], now);
+    const ttl = tokenTtlSeconds(deadline ? deadline.atMs - now : null);
+
     const session = await this.prisma.callSession.create({
       data: { userAId: a.userId, userBId: b.userId },
     });
@@ -413,19 +480,22 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     await this.prisma.callSession.update({ where: { id: session.id }, data: { roomId: roomName } });
 
     const [tokenA, tokenB] = await Promise.all([
-      this.livekit.createToken(roomName, a.userId, a.displayName),
-      this.livekit.createToken(roomName, b.userId, b.displayName),
+      this.livekit.createToken(roomName, a.userId, a.displayName, ttl),
+      this.livekit.createToken(roomName, b.userId, b.displayName, ttl),
     ]);
 
-    await this.callState.setActive(session.id, a, b);
+    await this.callState.setActive(session.id, a, b, deadline);
     await this.matching.recordPair(a.userId, b.userId);
+    await this.matching.recordMatchStart([a.userId, b.userId]); // counted now, not when the call ends
 
     const url = this.livekit.url;
+    const secondsLeft = (i: number) => (left[i].remainingMs === null ? null : Math.floor(left[i].remainingMs! / 1000));
     this.server.to(a.socketId).emit(event, {
       roomName,
       token: tokenA,
       url,
       sessionId: session.id,
+      limitSeconds: secondsLeft(0),
       peer: { userId: b.userId, displayName: b.displayName, country: b.country },
     });
     this.server.to(b.socketId).emit(event, {
@@ -433,6 +503,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       token: tokenB,
       url,
       sessionId: session.id,
+      limitSeconds: secondsLeft(1),
       peer: { userId: a.userId, displayName: a.displayName, country: a.country },
     });
   }

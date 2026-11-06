@@ -140,6 +140,18 @@ d('call state (redis)', () => {
     expect(accepted).toBeLessThanOrEqual(20);
   });
 
+  it('schedules a deadline, claims it once when due, and clears it when the call ends', async () => {
+    await calls.setActive('d1', { userId: 'a', socketId: 'sa' }, { userId: 'b', socketId: 'sb' }, { atMs: 1000, limitedUserId: 'b' });
+    await calls.setActive('d2', { userId: 'c', socketId: 'sc' }, { userId: 'd', socketId: 'sd' }, { atMs: 9_999_999_999_999, limitedUserId: 'd' });
+    expect(await calls.claimDue(500)).toHaveLength(0);
+    const [x, y] = await Promise.all([calls.claimDue(2000), calls.claimDue(2000)]);
+    const claimed = [...x, ...y];
+    expect(claimed).toHaveLength(1); // exactly one instance wins
+    expect(claimed[0]).toMatchObject({ sessionId: 'd1', limitedUserId: 'b', users: ['a', 'b'], sockets: ['sa', 'sb'] });
+    await calls.endBySocket('sc'); // normal end removes the pending deadline
+    expect(await calls.claimDue(Date.now() + 1e13)).toHaveLength(0);
+  });
+
   it('pending calls expire', async () => {
     await calls.addPending('c3', { callerUserId: 'a', callerSocketId: 'sa', calleeUserId: 'b' });
     expect(await redis.ttl('call:pending:c3')).toBeLessThanOrEqual(30);
