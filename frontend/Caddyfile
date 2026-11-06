@@ -1,0 +1,30 @@
+# DOMAIN=app.example.com   -> automatic HTTPS (Let's Encrypt)
+# DOMAIN=:80               -> plain HTTP (local testing, or behind a proxy that terminates TLS)
+{$DOMAIN::80} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		# Camera and microphone are the point of the app; everything else is off.
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=(), payment=(self)"
+		# Report-only first: watch the browser console for violations, then switch to enforcing.
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https: wss:; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com"
+	}
+
+	@api path /api/* /socket.io/*
+	handle @api {
+		reverse_proxy backend:3000
+	}
+
+	handle {
+		root * /srv
+		@assets path /assets/* /icon-*.png /apple-touch-icon.png
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		# Single-page app: unknown paths fall back to index.html
+		try_files {path} /index.html
+		file_server
+	}
+}
