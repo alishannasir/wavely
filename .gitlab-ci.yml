@@ -1,23 +1,54 @@
 image: node:20
 
 stages:
+  - test
   - build
 
+# Backend tests include the Redis-backed integration tests (atomic matching, call state, presence).
 backend:
-  stage: build
+  stage: test
+  services:
+    - name: redis:7-alpine
+      alias: redis
+  variables:
+    REDIS_URL_TEST: "redis://redis:6379"
   script:
     - cd backend
-    - npm install
+    - npm ci
     - npx prisma generate
     - npm run typecheck
     - npm run test
     - npm run build
 
+# Applying the migrations to an empty database proves they work and match schema.prisma.
+migrations:
+  stage: test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_PASSWORD: ci
+    POSTGRES_DB: ci
+    DATABASE_URL: "postgresql://postgres:ci@postgres:5432/ci"
+  script:
+    - cd backend
+    - npm ci
+    - sh scripts/migrate.sh
+    - npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+
 frontend:
-  stage: build
+  stage: test
   script:
     - cd frontend
-    - npm install
+    - npm ci
     - npm run typecheck
     - npm run test
     - npm run build
+
+# Report only: known advisories in dev tooling should not block a merge request.
+audit:
+  stage: test
+  allow_failure: true
+  script:
+    - (cd backend && npm audit --omit=dev)
+    - (cd frontend && npm audit --omit=dev)

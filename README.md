@@ -15,6 +15,7 @@ cd frontend && npm install && npm run dev   # frontend on :5173
 ```
 
 The backend refuses to start without a `JWT_SECRET` of at least 32 characters.
+The database schema is managed with Prisma migrations (`backend/prisma/migrations`). `docker compose up` applies them automatically (`npm run migrate` does the same by hand, and also baselines a database that was created with the old `db push` setup). After changing `schema.prisma`, create a migration with `cd backend && npx prisma migrate dev --name what_changed` and commit the new folder.
 Video needs a LiveKit server (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`).
 For Stripe webhooks locally: `stripe listen --forward-to localhost:3000/api/payments/webhook`.
 

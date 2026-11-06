@@ -9,6 +9,7 @@
     "test": "jest",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
+    "migrate": "sh scripts/migrate.sh",
     "prisma:seed": "ts-node prisma/seed.ts"
   },
   "prisma": {
