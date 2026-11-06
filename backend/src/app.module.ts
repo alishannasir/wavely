@@ -9,6 +9,7 @@ import { FriendsModule } from './friends/friends.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { BlocksModule } from './blocks/blocks.module';
+import { AppealsModule } from './appeals/appeals.module';
 import { GeoMiddleware } from './common/geo/geo.middleware';
 import { GeoGuard } from './common/geo/geo.guard';
 import { APP_GUARD } from '@nestjs/core';
@@ -20,7 +21,10 @@ import { HealthController } from './health/health.controller';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
     // Per-IP limit for HTTP (in memory, so per API instance). Auth routes have stricter limits.
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: parseInt(process.env.THROTTLE_LIMIT || '120', 10) }]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: parseInt(process.env.THROTTLE_LIMIT || '120', 10) }],
+      errorMessage: 'Too many requests. Please wait a minute and try again.',
+    }),
     PrismaModule,
     RedisModule,
     AuthModule,
@@ -30,6 +34,7 @@ import { HealthController } from './health/health.controller';
     PaymentsModule,
     ModerationModule,
     BlocksModule,
+    AppealsModule,
   ],
   controllers: [HealthController],
   providers: [

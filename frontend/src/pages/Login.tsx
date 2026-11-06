@@ -38,7 +38,14 @@ export default function Login() {
         <form onSubmit={submit} className="flex flex-col gap-4">
           <input type="email" required placeholder="Email" aria-label="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} />
           <input type="password" required placeholder="Password" aria-label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className={inputCls} />
-          {error && <p role="alert" className="text-sm font-semibold text-danger">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm font-semibold text-danger">
+              {error}
+              {/suspended or banned/i.test(error) && (
+                <> <Link to={`/appeal?email=${encodeURIComponent(email)}`} className="underline">Appeal this decision</Link></>
+              )}
+            </p>
+          )}
           <ChunkyButton full disabled={busy}>Log in</ChunkyButton>
         </form>
         <div className="my-5 flex items-center gap-3 text-xs text-muted">

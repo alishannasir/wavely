@@ -7,7 +7,8 @@ export type AuditAction =
   | 'REPORT_ESCALATED'
   | 'HOLD_RELEASED'
   | 'USER_STATUS'
-  | 'ROLE_CHANGED';
+  | 'ROLE_CHANGED'
+  | 'APPEAL_DECIDED';
 
 /** Append-only record of what moderators and admins did. The app never edits or deletes entries. */
 @Injectable()

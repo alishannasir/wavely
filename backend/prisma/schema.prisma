@@ -32,6 +32,12 @@ enum UserRole {
   ADMIN
 }
 
+enum AppealStatus {
+  OPEN
+  APPROVED
+  REJECTED
+}
+
 enum BanType {
   IP
   DEVICE
@@ -104,6 +110,7 @@ model User {
   reportsMade      Report[]      @relation("ReportReporter")
   reportsReceived  Report[]      @relation("ReportReported")
   dailyUsage       DailyUsage[]
+  appeals          Appeal[]
   blocksMade       Block[]      @relation("BlockBlocker")
   blocksReceived   Block[]      @relation("BlockBlocked")
 
@@ -263,4 +270,22 @@ model Block {
   @@unique([blockerId, blockedId])
   @@index([blockedId])
   @@map("blocks")
+}
+
+// A suspended or banned user asks for the decision to be reviewed (they sign in with email + password
+// on /appeal, since a banned account cannot log in). One open appeal at a time, with a cooldown.
+model Appeal {
+  id           String       @id @default(cuid())
+  userId       String
+  message      String       @db.Text
+  status       AppealStatus @default(OPEN)
+  createdAt    DateTime     @default(now())
+  decidedById  String?
+  decidedAt    DateTime?
+  decisionNote String?
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@map("appeals")
 }

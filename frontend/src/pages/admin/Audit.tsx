@@ -11,6 +11,7 @@ const LABEL: Record<string, string> = {
   HOLD_RELEASED: 'Released a legal hold',
   USER_STATUS: 'Changed a user’s status',
   ROLE_CHANGED: 'Changed a role',
+  APPEAL_DECIDED: 'Decided an appeal',
 };
 
 function summary(e: AuditEntry): string {
@@ -18,6 +19,7 @@ function summary(e: AuditEntry): string {
   if (e.action === 'REPORT_RESOLVED') return `${m.action}${m.reportsResolved ? ` (${m.reportsResolved} report${m.reportsResolved === 1 ? '' : 's'})` : ''}`;
   if (e.action === 'USER_STATUS') return `${m.from} → ${m.to}${m.note ? ` — ${m.note}` : ''}`;
   if (e.action === 'ROLE_CHANGED') return `${m.from} → ${m.to}`;
+  if (e.action === 'APPEAL_DECIDED') return `${m.decision}${m.note ? ` — ${m.note}` : ''}`;
   if (e.action === 'REPORT_ESCALATED') return m.note ? `“${m.note}”` : '';
   return '';
 }

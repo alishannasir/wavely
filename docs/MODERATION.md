@@ -13,6 +13,15 @@ Moderators and administrators see a **Moderation** row on their Profile page. It
 - Roles: `USER`, `MODERATOR`, `ADMIN`. The first administrator is created by listing their email in `ADMIN_EMAILS` (register first, then restart the API). Administrators manage roles on a user's page. Only administrators can release a legal hold, and moderators cannot act on administrators.
 - API: `GET /api/admin/reports[/counts|/:id]`, `POST /api/admin/reports/:id/{resolve,escalate,release-hold}`, `GET /api/admin/users[/:id]`, `POST /api/admin/users/:id/{status,role}`, `GET /api/admin/audit`.
 
+## Blocking
+Anyone (including guests) can block the person they are talking to (**Block** in a call) and manage the list in **Profile > Blocked people**. A block is symmetric in effect: the two are never matched again, cannot send each other friend requests or messages, and an existing friendship is removed. The other person is not told. The database (`blocks`) is the source of truth; Redis sets `mm:block:<userId>` mirror it for the matching script and are rebuilt when the API starts. Blocking does not tell moderators anything: use **Report** for rule-breaking.
+
+## Appeals
+A suspended or banned user cannot log in, so they go to **/appeal**, sign in with email and password, see their status and send a message (20-2000 characters). One appeal is open at a time and a rejected user waits `APPEAL_COOLDOWN_DAYS` (default 7) before appealing again. Moderators decide in **Moderation > Appeals** (approve restores the account and lifts its device/IP bans; reject keeps it; both can carry a note the user sees). Decisions are in the audit log.
+- The appeal endpoints skip the ban check (a device or IP ban would otherwise lock people out of appealing) and are rate limited: 8 requests a minute per IP and 10 password attempts an hour per email.
+- Limitation: only accounts with an email and password can appeal here. Guest sessions and Google-only accounts have nothing to sign in with.
+- Nobody is emailed about the outcome yet (there is no email sending); users have to come back to the page.
+
 ## Evidence retention (defaults, change with counsel)
 - Normal reports: evidence is deleted **30 days** after the report (`EVIDENCE_RETENTION_DAYS`).
 - Reports that led to a suspension or ban: **90 days** after the decision (`EVIDENCE_ACTIONED_RETENTION_DAYS`).
