@@ -27,6 +27,10 @@ cd backend && npm install && npx prisma generate && npx prisma db push && npm ru
 
 The backend reads `.env` from `backend/` or the repo root.
 
+## Production
+
+`docker-compose.prod.yml` builds production images and runs Caddy (website + HTTPS), the API, Postgres and Redis. Step-by-step setup, Cloudflare, LiveKit, backups and monitoring: **docs/DEPLOY.md**.
+
 ## Tests and checks
 
 Redis-backed matching tests are skipped unless you point them at a throwaway Redis (they flush it!):
