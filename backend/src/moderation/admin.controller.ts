@@ -14,6 +14,11 @@ export class AdminController {
     return this.reports.listForReview(status ?? 'OPEN');
   }
 
+  @Get(':id')
+  detail(@Param('id') id: string) {
+    return this.reports.detail(id);
+  }
+
   @Post(':id/resolve')
   resolve(@Param('id') id: string, @Req() req: { user: { userId: string } }, @Body() dto: ResolveReportDto) {
     return this.reports.resolve(id, req.user.userId, dto.action);

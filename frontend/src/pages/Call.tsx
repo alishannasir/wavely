@@ -1,3 +1,4 @@
+import { captureFrame } from '../lib/evidence';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { Room } from 'livekit-client';
@@ -122,6 +123,15 @@ export default function Call() {
         navigate('/onboarding');
         return;
       }
+      if (payload?.code === 'RULES_REQUIRED') {
+        navigate('/home');
+        return;
+      }
+      if (payload?.code === 'BANNED') {
+        useAuth.getState().logout();
+        navigate('/');
+        return;
+      }
       setNotice(payload?.message ?? 'Something went wrong.');
     };
 
@@ -214,6 +224,7 @@ export default function Call() {
           reportedUserId: session.peer.userId,
           sessionId: session.sessionId,
           reasonCode,
+          evidenceImage: captureFrame(remoteVideoRef.current),
         }),
       });
       setNotice('Report submitted. Thank you.');

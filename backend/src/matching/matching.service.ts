@@ -11,6 +11,8 @@ export interface QueueEntry {
   country: string | null;
   preferredGender: string | null;
   preferredCountry: string | null;
+  /** Shadow queue: flagged users only match other flagged users. */
+  flagged?: boolean;
 }
 
 const QUEUE_KEY = 'mm:queue';
@@ -25,6 +27,7 @@ export class MatchingService {
   /** Both sides' filters must be satisfied (filters are null for free users). */
   private compatible(a: QueueEntry, b: QueueEntry): boolean {
     if (a.userId === b.userId) return false;
+    if (!!a.flagged !== !!b.flagged) return false;
     const aOk =
       (!a.preferredGender || b.gender === a.preferredGender) &&
       (!a.preferredCountry || b.country === a.preferredCountry);

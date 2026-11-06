@@ -1,5 +1,8 @@
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../store/auth';
+import { api } from '../lib/api';
+import RulesModal from '../components/RulesModal';
+import { useAuth, User } from '../store/auth';
 import { useFilters } from '../store/filters';
 import { useBillingStatus } from '../lib/billing';
 
@@ -11,6 +14,7 @@ export default function Home() {
   const { user, logout } = useAuth();
   const { data: billing } = useBillingStatus(Boolean(user));
   const filters = useFilters();
+  const [showRules, setShowRules] = useState(false);
 
   if (!user) {
     navigate('/login');
@@ -131,12 +135,23 @@ export default function Home() {
 
       <div className="mt-auto">
         <button
-          onClick={() => navigate('/call')}
+          onClick={() => (user.rulesAcceptedAt ? navigate('/call') : setShowRules(true))}
           className="w-full rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-semibold py-4 text-lg transition-colors"
         >
           Start Chat
         </button>
       </div>
+      {showRules && (
+        <RulesModal
+          onCancel={() => setShowRules(false)}
+          onAccept={async () => {
+            const updated = await api<User>('/users/me/accept-rules', { method: 'POST' });
+            useAuth.getState().setUser(updated);
+            setShowRules(false);
+            navigate('/call');
+          }}
+        />
+      )}
     </main>
   );
 }
