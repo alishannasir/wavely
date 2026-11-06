@@ -53,3 +53,46 @@ describe('chat log evidence', () => {
     expect(data.evidenceExpiresAt).toBeInstanceOf(Date);
   });
 });
+
+describe('auto reports vs suspension', () => {
+  it('only counts USER reports toward auto-suspension', async () => {
+    const { svc, prisma } = setup();
+    await svc.createAutoNsfw('a', 'b', 's1', 0.95);
+    const suspendQueries = prisma.report.findMany.mock.calls.map((c: any[]) => c[0].where).filter((w: any) => w.reasonCode);
+    expect(suspendQueries.length).toBeGreaterThan(0);
+    for (const w of suspendQueries) expect(w.source).toBe('USER');
+  });
+
+  it('five distinct classifier reports can flag but never suspend', async () => {
+    const { svc, prisma } = setup();
+    // the suspension query filters source=USER, so it sees none; the flag query sees all five
+    prisma.report.findMany.mockImplementation(async ({ where }: any) =>
+      where.source === 'USER' ? [] : ['1', '2', '3', '4', '5'].map((r) => ({ reporterId: r })),
+    );
+    await svc.createAutoNsfw('a', 'b', 's1', 0.95);
+    expect(prisma.user.update).toHaveBeenCalled(); // shadow queue flag
+    expect(prisma.user.updateMany).not.toHaveBeenCalled(); // no suspension
+  });
+
+  it('upgrades an earlier automatic report when the person files their own', async () => {
+    const { svc, prisma } = setup();
+    prisma.report.findUnique.mockResolvedValue({ id: 'auto1', status: 'OPEN', source: 'AUTO_NSFW', evidenceImage: 'data:image/jpeg;base64,OLD' });
+    prisma.report.update = jest.fn();
+    const res = await svc.create('a', { reportedUserId: 'b', sessionId: 's1', reasonCode: 'HARASSMENT', evidenceImage: 'data:image/jpeg;base64,NEW' });
+    expect(res.id).toBe('auto1');
+    expect(prisma.report.create).not.toHaveBeenCalled();
+    expect(prisma.report.update.mock.calls[0][0].data).toMatchObject({ source: 'USER', reasonCode: 'HARASSMENT', evidenceImage: 'data:image/jpeg;base64,NEW' });
+  });
+
+  it('keeps the old evidence if the manual report has none, and never downgrades a manual report', async () => {
+    const { svc, prisma } = setup();
+    prisma.report.update = jest.fn();
+    prisma.report.findUnique.mockResolvedValue({ id: 'auto1', status: 'OPEN', source: 'AUTO_NSFW', evidenceImage: 'data:image/jpeg;base64,OLD' });
+    await svc.create('a', { reportedUserId: 'b', sessionId: 's1', reasonCode: 'SPAM' });
+    expect(prisma.report.update.mock.calls[0][0].data.evidenceImage).toBe('data:image/jpeg;base64,OLD');
+    prisma.report.update.mockClear();
+    prisma.report.findUnique.mockResolvedValue({ id: 'm1', status: 'OPEN', source: 'USER' });
+    await svc.createAutoNsfw('a', 'b', 's1', 0.9);
+    expect(prisma.report.update).not.toHaveBeenCalled();
+  });
+});

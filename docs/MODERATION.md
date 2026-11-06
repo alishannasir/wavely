@@ -4,7 +4,7 @@
 - A report needs a real `sessionId` that included both users. One report per reporter/target/session; max 10 reports/hour/reporter.
 - The client attaches a small JPEG frame of the reported user's video. The last 50 in-call chat lines are attached by the **server** from its own record of the call (never from the client), labelled `reporter` / `reported`. Chat is relayed by the server (`call-chat`), max 500 chars per line, 20 lines per 10s per user.
 - **Flagging:** 3+ distinct reporters (accounts older than 24h) in 24h put the user in the *shadow queue* for 24h: they are only matched with other flagged users.
-- **Auto-suspend:** only for `NUDITY` / `MINOR_CONCERN`, `REPORT_AUTO_SUSPEND_THRESHOLD` (default 5) distinct aged reporters in 24h. A moderator can restore.
+- **Auto-suspend:** only for `NUDITY` / `MINOR_CONCERN` reports **filed by people** (`source = USER`; classifier reports never suspend), `REPORT_AUTO_SUSPEND_THRESHOLD` (default 5) distinct aged reporters in 24h. A moderator can restore.
 - Everything else waits for a moderator: `GET /api/admin/reports`, `GET /api/admin/reports/:id` (with evidence), `POST /api/admin/reports/:id/resolve` with `DISMISS | SUSPEND | BAN | RESTORE`.
 - Give someone moderator rights: `UPDATE users SET role = 'MODERATOR' WHERE email = '...';`
 
@@ -22,6 +22,6 @@ Users must accept the rules (`rulesAcceptedAt`) and have a birthdate with age >=
 
 ## NSFW scanning (client-side, Phase 4)
 - While in a call, the viewer's browser samples the stranger's video every 3s and classifies it with the bundled NSFWJS MobileNetV2 model (lazy-loaded, ~3.5 MB, no CDN, nothing leaves the device). `Porn + Hentai >= 0.7` on two consecutive samples hides the video (blur) and lets the viewer skip or show it anyway. "Sexy" is ignored (too many false positives).
-- The client then sends `nsfw-flag`. The server only accepts it for the call that socket is in and about that call's peer, and turns it into a `Report` with `source = AUTO_NSFW`, reason `NUDITY`, the score and the frame as evidence. It uses the same rules as manual reports: one per reporter/target/session, its own rate limit (30/hour), distinct aged reporters for flagging and suspension. A modified client can therefore do no more harm than a malicious reporter.
+- The client then sends `nsfw-flag`. The server only accepts it for the call that socket is in and about that call's peer, and turns it into a `Report` with `source = AUTO_NSFW`, reason `NUDITY`, the score and the frame as evidence. It uses the same rules as manual reports (one per reporter/target/session, its own rate limit of 30/hour), but only counts toward the shadow-queue flag, never toward suspension. If the same person later files their own report for that call, it replaces the automatic one (their reason and evidence win). A modified client can therefore do no more harm than a malicious reporter.
 - Limits: it protects the viewer and produces evidence, but it cannot stop a determined sender, and accuracy is modest (false positives and misses). Treat `AUTO_NSFW` reports as a signal for moderators, not proof.
 - Upgrade path: swap in a server-side moderation API (Hive, Sightengine, AWS Rekognition) by sampling frames from LiveKit Egress and calling `ReportsService.createAutoNsfw`-style logic. Needs an account and a budget.
