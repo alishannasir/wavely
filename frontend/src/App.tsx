@@ -8,6 +8,7 @@ const Signup = lazy(() => import('./pages/Signup'));
 const AuthCallback = lazy(() => import('./pages/AuthCallback'));
 const Onboarding = lazy(() => import('./pages/Onboarding'));
 const Home = lazy(() => import('./pages/Home'));
+const Start = lazy(() => import('./pages/Start'));
 const Call = lazy(() => import('./pages/Call'));
 const Upgrade = lazy(() => import('./pages/Upgrade'));
 const Friends = lazy(() => import('./pages/Friends'));
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/auth/callback" element={<AuthCallback />} />
           <Route path="/onboarding" element={<Onboarding />} />
           <Route path="/home" element={<Home />} />
+          <Route path="/start" element={<Start />} />
           <Route path="/call" element={<Call />} />
           <Route path="/upgrade" element={<Upgrade />} />
           <Route path="/friends" element={<Friends />} />

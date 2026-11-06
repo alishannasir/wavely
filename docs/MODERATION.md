@@ -2,7 +2,7 @@
 
 ## Reports
 - A report needs a real `sessionId` that included both users. One report per reporter/target/session; max 10 reports/hour/reporter.
-- The client attaches a small JPEG frame of the reported user's video (and, once in-call chat exists, the recent chat lines).
+- The client attaches a small JPEG frame of the reported user's video. The last 50 in-call chat lines are attached by the **server** from its own record of the call (never from the client), labelled `reporter` / `reported`. Chat is relayed by the server (`call-chat`), max 500 chars per line, 20 lines per 10s per user.
 - **Flagging:** 3+ distinct reporters (accounts older than 24h) in 24h put the user in the *shadow queue* for 24h: they are only matched with other flagged users.
 - **Auto-suspend:** only for `NUDITY` / `MINOR_CONCERN`, `REPORT_AUTO_SUSPEND_THRESHOLD` (default 5) distinct aged reporters in 24h. A moderator can restore.
 - Everything else waits for a moderator: `GET /api/admin/reports`, `GET /api/admin/reports/:id` (with evidence), `POST /api/admin/reports/:id/resolve` with `DISMISS | SUSPEND | BAN | RESTORE`.

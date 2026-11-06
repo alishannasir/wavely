@@ -357,6 +357,16 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     }
   }
 
+  /** In-call text chat. Relayed by the server so it can be attached to abuse reports. */
+  @SubscribeMessage('call-chat')
+  async callChat(@ConnectedSocket() client: Socket, @MessageBody() payload?: { text?: string }) {
+    const info = await this.callState.getBySocket(client.id);
+    if (!info) return;
+    const line = await this.callState.pushChat(info.sessionId, info.userId, payload?.text);
+    if (!line) return;
+    this.server.to(info.peerSocketId).emit('call-chat', { text: line.text, at: line.at });
+  }
+
   /**
    * The viewer's browser classified the stranger's video as explicit. Only accepted for the call this
    * socket is actually in, and only about that call's peer. Becomes a moderator report.

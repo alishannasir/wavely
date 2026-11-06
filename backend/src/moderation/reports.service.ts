@@ -114,6 +114,9 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     });
     if (duplicate) return { id: duplicate.id, status: duplicate.status };
 
+    // The chat log comes from the server's own record of the call, never from the client.
+    const chatLog = await this.chatLogFor(dto.sessionId, reporterId);
+
     const report = await this.prisma.report.create({
       data: {
         reporterId,
@@ -123,17 +126,27 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         source: meta?.source ?? 'USER',
         nsfwScore: meta?.nsfwScore,
         evidenceImage: dto.evidenceImage,
-        chatLog: dto.chatLog as any,
+        chatLog: chatLog.length ? (chatLog as any) : undefined,
         evidenceExpiresAt:
-          dto.evidenceImage || dto.chatLog?.length
-            ? new Date(Date.now() + retentionDays() * DAY_MS)
-            : null,
+          dto.evidenceImage || chatLog.length ? new Date(Date.now() + retentionDays() * DAY_MS) : null,
       },
     });
 
     await this.maybeFlag(dto.reportedUserId);
     await this.maybeAutoSuspend(dto.reportedUserId);
     return { id: report.id, status: report.status };
+  }
+
+  private async chatLogFor(sessionId: string, reporterId: string) {
+    const raw = await this.redis.lrange(`call:chat:${sessionId}`, 0, -1);
+    return raw.flatMap((r) => {
+      try {
+        const l = JSON.parse(r) as { userId: string; text: string; at: number };
+        return [{ from: l.userId === reporterId ? 'reporter' : 'reported', text: l.text, at: l.at }];
+      } catch {
+        return [];
+      }
+    });
   }
 
   /**
