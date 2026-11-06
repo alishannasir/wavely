@@ -38,8 +38,9 @@ export class LivekitService {
    * To really end a call at the free-tier limit the server removes the participants. Best effort.
    */
   async removeParticipants(roomName: string, identities: string[]): Promise<void> {
-    if (!this.url) return;
-    const host = this.url.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+    const base = process.env.LIVEKIT_API_URL || this.url; // server-to-server address (may differ from the browser's)
+    if (!base) return;
+    const host = base.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
     const client = new RoomServiceClient(host, process.env.LIVEKIT_API_KEY ?? '', process.env.LIVEKIT_API_SECRET ?? '');
     await Promise.all(
       identities.map((id) =>
