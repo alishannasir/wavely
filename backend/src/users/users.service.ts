@@ -19,6 +19,14 @@ export class UsersService {
     return this.sanitize(user);
   }
 
+  async acceptRules(userId: string) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { rulesAcceptedAt: new Date() },
+    });
+    return this.sanitize(user);
+  }
+
   async updateProfile(userId: string, dto: UpdateProfileDto) {
     let birthdate: Date | undefined;
     if (dto.birthdate) {

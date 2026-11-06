@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -15,6 +15,11 @@ export class UsersController {
   @Get('me')
   me(@Req() req: AuthedRequest) {
     return this.users.findMe(req.user.userId);
+  }
+
+  @Post('me/accept-rules')
+  acceptRules(@Req() req: AuthedRequest) {
+    return this.users.acceptRules(req.user.userId);
   }
 
   @Patch('me')

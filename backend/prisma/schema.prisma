@@ -31,6 +31,11 @@ enum UserRole {
   ADMIN
 }
 
+enum BanType {
+  IP
+  DEVICE
+}
+
 enum FriendStatus {
   PENDING
   ACCEPTED
@@ -79,6 +84,11 @@ model User {
   creditCents   Int          @default(0)
   status        UserStatus   @default(ACTIVE)
   role          UserRole     @default(USER)
+  rulesAcceptedAt DateTime?
+  // While in the future, the user is only matched with other flagged users (shadow queue).
+  flaggedUntil  DateTime?
+  lastDeviceId  String?
+  lastIp        String?
 
   subscriptions    Subscription[]
   sessionsAsA      CallSession[] @relation("SessionUserA")
@@ -157,6 +167,11 @@ model Report {
   reviewedById   String?
   reviewedAt     DateTime?
   resolution     String?
+  // Evidence: a JPEG data URL of the reported user's video frame and the recent chat log.
+  // Purged after EVIDENCE_RETENTION_DAYS (default 30), see ReportsService.purgeExpiredEvidence.
+  evidenceImage  String?       @db.Text
+  chatLog        Json?
+  evidenceExpiresAt DateTime?
   reporter       User         @relation("ReportReporter", fields: [reporterId], references: [id])
   reported       User         @relation("ReportReported", fields: [reportedUserId], references: [id])
   session        CallSession? @relation(fields: [sessionId], references: [id])
@@ -187,4 +202,18 @@ model PlanLimit {
   filtersEnabled Boolean          @default(true)
 
   @@map("plan_limits")
+}
+
+// IP / device bans. User-level bans use User.status = BANNED.
+model Ban {
+  id        String   @id @default(cuid())
+  type      BanType
+  value     String
+  reason    String?
+  createdById String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+
+  @@unique([type, value])
+  @@map("bans")
 }

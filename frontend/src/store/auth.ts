@@ -7,6 +7,7 @@ export interface User {
   displayName?: string | null;
   avatarUrl?: string | null;
   birthdate?: string | null;
+  rulesAcceptedAt?: string | null;
   gender?: string | null;
   country?: string | null;
   currentStreak: number;

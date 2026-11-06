@@ -11,6 +11,8 @@ import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
+import { BansService } from '../moderation/bans.service';
+import { clientIp, sanitizeDeviceId } from '../common/client-info';
 import { AuthService } from '../auth/auth.service';
 import { MatchingService, QueueEntry } from './matching.service';
 import { LivekitService } from './livekit.service';
@@ -57,13 +59,25 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly friends: FriendsService,
     private readonly presence: PresenceService,
     private readonly messages: MessagesService,
+    private readonly bans: BansService,
   ) {}
 
   async handleConnection(client: Socket) {
     try {
       const token = client.handshake.auth?.token as string | undefined;
       const payload = this.jwt.verify<{ sub: string }>(token ?? '');
+      const ip = clientIp(client.handshake.headers, client.handshake.address);
+      const deviceId = sanitizeDeviceId(client.handshake.auth?.deviceId);
+      if (await this.bans.isBlocked(ip, deviceId)) {
+        client.emit('match-error', { code: 'BANNED', message: 'Access denied.' });
+        client.disconnect(true);
+        return;
+      }
       client.data.userId = payload.sub;
+      await this.prisma.user.update({
+        where: { id: payload.sub },
+        data: { ...(deviceId ? { lastDeviceId: deviceId } : {}), ...(ip ? { lastIp: ip } : {}) },
+      });
       await this.presence.markOnline(payload.sub, client.id);
     } catch {
       client.disconnect(true);
@@ -90,6 +104,10 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       client.emit('match-error', { message: 'Your account cannot join matches right now.' });
       return;
     }
+    if (!user.rulesAcceptedAt) {
+      client.emit('match-error', { code: 'RULES_REQUIRED', message: 'Please accept the rules first.' });
+      return;
+    }
     // 18+ gate: OAuth signups without a birthdate must finish onboarding first.
     if (!user.birthdate || AuthService.ageOf(user.birthdate) < 18) {
       client.emit('match-error', {
@@ -113,6 +131,7 @@ export class MatchingGateway implements OnGatewayConnection, OnGatewayDisconnect
       displayName: user.displayName,
       gender: user.gender,
       country: user.country,
+      flagged: !!user.flaggedUntil && user.flaggedUntil > new Date(),
       preferredGender: filtersAllowed ? payload?.preferredGender ?? null : null,
       preferredCountry: filtersAllowed ? payload?.preferredCountry?.toUpperCase() ?? null : null,
     };
