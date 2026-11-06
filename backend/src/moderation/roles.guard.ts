@@ -9,3 +9,12 @@ export class ModeratorGuard implements CanActivate {
     return true;
   }
 }
+
+/** For the few actions only an administrator may take (roles, releasing a legal hold). */
+@Injectable()
+export class AdminGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    if (context.switchToHttp().getRequest().user?.role !== 'ADMIN') throw new ForbiddenException('Administrators only');
+    return true;
+  }
+}

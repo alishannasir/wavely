@@ -8,6 +8,17 @@
 - Everything else waits for a moderator: `GET /api/admin/reports`, `GET /api/admin/reports/:id` (with evidence), `POST /api/admin/reports/:id/resolve` with `DISMISS | SUSPEND | BAN | RESTORE`.
 - Give someone moderator rights: `UPDATE users SET role = 'MODERATOR' WHERE email = '...';`
 
+## Moderator interface (`/admin`)
+Moderators and administrators see a **Moderation** row on their Profile page. It has a report **queue** (filters, paging; keyboard: `j`/`k`/Enter, and `d`/`s`/`b` on a report), a **report review** page (evidence frame, chat log, reporter and reported-user context, decisions, history), **user search** (by id, email, name, IP or device) with a user page, and an **audit log**. Every decision asks for confirmation and is written to the audit log (`audit_logs`, append-only).
+- Roles: `USER`, `MODERATOR`, `ADMIN`. The first administrator is created by listing their email in `ADMIN_EMAILS` (register first, then restart the API). Administrators manage roles on a user's page. Only administrators can release a legal hold, and moderators cannot act on administrators.
+- API: `GET /api/admin/reports[/counts|/:id]`, `POST /api/admin/reports/:id/{resolve,escalate,release-hold}`, `GET /api/admin/users[/:id]`, `POST /api/admin/users/:id/{status,role}`, `GET /api/admin/audit`.
+
+## Evidence retention (defaults, change with counsel)
+- Normal reports: evidence is deleted **30 days** after the report (`EVIDENCE_RETENTION_DAYS`).
+- Reports that led to a suspension or ban: **90 days** after the decision (`EVIDENCE_ACTIONED_RETENTION_DAYS`).
+- **Possible-minor reports are never auto-deleted until a moderator has decided them.**
+- **Escalate** puts a report under **legal hold**: its evidence is never auto-deleted until an administrator releases it (then the normal 30 days apply). Escalation only *preserves* the evidence; filing with NCMEC (US) / IWF (UK) or another authority is still a manual step, and registering with them as a provider is something to do before launch.
+
 ## Bans
 - `BAN` sets the account to BANNED and bans the user's last-seen **device id** (90 days) and **IP** (7 days; IPs are shared, so they expire fast). Checked on every HTTP request (global `BanGuard`) and on socket connect. `RESTORE` lifts both.
 - Device ids are client-generated (localStorage), so they only stop casual evasion.
