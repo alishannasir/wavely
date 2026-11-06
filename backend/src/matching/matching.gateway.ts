@@ -155,6 +155,13 @@ export class MatchingGateway
    * is ended and it is told with `session-replaced`.
    */
   private async takeOver(userId: string, client: Socket) {
+    // Starting a search or a call cancels any friend call this user still has ringing.
+    for (const call of await this.callState.dropPendingByCaller(userId)) {
+      this.server.to(userRoom(call.calleeUserId)).emit('call-cancelled', { callerUserId: userId });
+      if (call.callerSocketId !== client.id) {
+        this.server.to(call.callerSocketId).emit('call-unavailable', { message: 'Call cancelled.' });
+      }
+    }
     const callSocketId = await this.callState.socketInCall(userId);
     if (callSocketId) {
       if (callSocketId === client.id) {
@@ -295,8 +302,15 @@ export class MatchingGateway
     }
   }
 
-  private canCall(user: { status: string; birthdate: Date | null; adultAttestedAt?: Date | null; isGuest?: boolean }): boolean {
-    return user.status === 'ACTIVE' && AuthService.isAdultUser(user);
+  /** Same gates as find-match: active account, accepted the rules, adult. */
+  private canCall(user: {
+    status: string;
+    birthdate: Date | null;
+    rulesAcceptedAt?: Date | null;
+    adultAttestedAt?: Date | null;
+    isGuest?: boolean;
+  }): boolean {
+    return user.status === 'ACTIVE' && !!user.rulesAcceptedAt && AuthService.isAdultUser(user);
   }
 
   @SubscribeMessage('call-friend')
@@ -368,6 +382,11 @@ export class MatchingGateway
       client.emit('call-unavailable', { message: 'The caller is no longer available.' });
       return;
     }
+    // The caller may have started another call since ringing.
+    if (await this.callState.socketInCall(pending.callerUserId)) {
+      client.emit('call-unavailable', { message: 'The caller is busy.' });
+      return;
+    }
     // Other tabs of the callee stop ringing.
     this.server.to(userRoom(pending.calleeUserId)).emit('call-cancelled', { callId });
 
@@ -396,6 +415,7 @@ export class MatchingGateway
     }
     await this.takeOver(callee.id, client);
     await this.matching.removeFromQueue(callee.id);
+    await this.matching.removeFromQueue(caller.id);
     await this.startCall(
       'call-started',
       { userId: caller.id, socketId: pending.callerSocketId, displayName: caller.displayName, country: caller.country },
@@ -476,7 +496,7 @@ export class MatchingGateway
   }
 
   /** Cancels ringing calls placed from this socket and tells the callee's tabs to stop ringing. */
-  private async dropPendingCallsBy(userId: string, socketId: string) {
+  private async dropPendingCallsBy(userId: string, socketId?: string) {
     const dropped = await this.callState.dropPendingByCaller(userId, socketId);
     for (const call of dropped) {
       this.server.to(userRoom(call.calleeUserId)).emit('call-cancelled', { callerUserId: userId });

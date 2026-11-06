@@ -111,15 +111,15 @@ export class CallStateService {
     return call;
   }
 
-  /** Drops the pending calls a user placed from one socket (that tab disconnected / left). */
-  async dropPendingByCaller(userId: string, callerSocketId: string): Promise<PendingCall[]> {
+  /** Drops the pending calls a user placed: from one socket (that tab left), or all of them when no socket is given (the user started something else). */
+  async dropPendingByCaller(userId: string, callerSocketId?: string): Promise<PendingCall[]> {
     const ids = await this.redis.smembers(`call:pending:by:${userId}`);
     const dropped: PendingCall[] = [];
     for (const id of ids) {
       const peeked = await this.peekPending(id);
       if (!peeked) {
         await this.redis.srem(`call:pending:by:${userId}`, id); // expired
-      } else if (peeked.callerSocketId === callerSocketId) {
+      } else if (!callerSocketId || peeked.callerSocketId === callerSocketId) {
         const c = await this.takePending(id);
         if (c) dropped.push(c);
       }
