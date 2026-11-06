@@ -30,7 +30,7 @@ services:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway" # lets the container reach a LiveKit server on your machine
-    command: sh -c "npm install && npx prisma generate && npx prisma db push && npm run prisma:seed && npm run start:dev"
+    command: sh -c "npm install && npx prisma generate && sh scripts/migrate.sh && npm run prisma:seed && npm run start:dev"
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/videochat
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
