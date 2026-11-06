@@ -25,6 +25,12 @@ enum UserStatus {
   BANNED
 }
 
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+}
+
 enum FriendStatus {
   PENDING
   ACCEPTED
@@ -72,6 +78,7 @@ model User {
   lastActiveDate DateTime?
   creditCents   Int          @default(0)
   status        UserStatus   @default(ACTIVE)
+  role          UserRole     @default(USER)
 
   subscriptions    Subscription[]
   sessionsAsA      CallSession[] @relation("SessionUserA")
@@ -147,10 +154,16 @@ model Report {
   reasonCode     ReportReason
   status         ReportStatus @default(OPEN)
   createdAt      DateTime     @default(now())
+  reviewedById   String?
+  reviewedAt     DateTime?
+  resolution     String?
   reporter       User         @relation("ReportReporter", fields: [reporterId], references: [id])
   reported       User         @relation("ReportReported", fields: [reportedUserId], references: [id])
   session        CallSession? @relation(fields: [sessionId], references: [id])
 
+  // One report per reporter/target/session (sessionId is required by the API).
+  @@unique([reporterId, reportedUserId, sessionId])
+  @@index([reportedUserId, status])
   @@map("reports")
 }
 
