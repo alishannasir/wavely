@@ -47,3 +47,9 @@ Once real delivery is configured, friends, messages and payments require a confi
 - Rate limits are per IP and kept in memory per API instance (fine for one server). Tune with `THROTTLE_LIMIT`.
 - Set `NODE_ENV=production` (the compose file does): it turns off the "any localhost origin" CORS rule.
 - Blocked regions, age assurance and evidence handling: see `docs/MODERATION.md`.
+
+## Login cookie
+
+The login token is kept in an HttpOnly, SameSite=Lax cookie named `ovc_session` (Secure on https), so page scripts cannot read it.
+The website and the API must be on the same site (for example `app.example.com` and `api.example.com`), or SameSite=Lax cookies will not be sent.
+`FRONTEND_URL` must list the exact website origin (it is used for CORS with credentials and the CSRF origin check).

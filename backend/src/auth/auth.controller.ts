@@ -13,6 +13,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AccountService } from '../account/account.service';
 import { GoogleAuthGuard } from './google-auth.guard';
+import { clearSessionCookie, setSessionCookie } from './session-cookie';
 import { ChangeEmailDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, TokenDto } from './dto/account.dto';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -24,6 +25,12 @@ import { primaryFrontendUrl } from '../common/cors';
 import { UpgradeGuestDto } from './dto/upgrade-guest.dto';
 import { clientIp, sanitizeDeviceId } from '../common/client-info';
 
+/** Puts the login token in the session cookie as well as in the response body. */
+function withSession<T extends { access_token: string }>(res: Response, result: T): T {
+  setSessionCookie(res, result.access_token);
+  return result;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -33,30 +40,40 @@ export class AuthController {
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('register')
-  register(@Body() dto: RegisterDto, @Req() req: { country?: string | null }) {
-    return this.auth.register(dto, req.country ?? null);
+  async register(@Body() dto: RegisterDto, @Req() req: { country?: string | null }, @Res({ passthrough: true }) res: Response) {
+    return withSession(res, await this.auth.register(dto, req.country ?? null));
   }
 
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('guest')
-  guest(@Body() _dto: GuestDto, @Req() req: any) {
-    return this.auth.createGuest({
-      ip: clientIp(req.headers, req.socket?.remoteAddress),
-      deviceId: sanitizeDeviceId(req.headers['x-device-id']),
-      country: req.country ?? null,
-    });
+  async guest(@Body() _dto: GuestDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+    return withSession(
+      res,
+      await this.auth.createGuest({
+        ip: clientIp(req.headers, req.socket?.remoteAddress),
+        deviceId: sanitizeDeviceId(req.headers['x-device-id']),
+        country: req.country ?? null,
+      }),
+    );
   }
 
   @Post('upgrade-guest')
   @UseGuards(AuthGuard('jwt'))
-  upgradeGuest(@Req() req: { user: { userId: string } }, @Body() dto: UpgradeGuestDto) {
-    return this.auth.upgradeGuest(req.user.userId, dto);
+  async upgradeGuest(@Req() req: { user: { userId: string } }, @Body() dto: UpgradeGuestDto, @Res({ passthrough: true }) res: Response) {
+    return withSession(res, await this.auth.upgradeGuest(req.user.userId, dto));
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto);
+  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+    return withSession(res, await this.auth.login(dto));
+  }
+
+  /** Signs out: clears the session cookie. Works with or without a valid session. */
+  @Post('logout')
+  logout(@Res({ passthrough: true }) res: Response) {
+    clearSessionCookie(res);
+    return { ok: true };
   }
 
   /** A guest asks for a signed token to carry through Google sign-in (so the guest becomes the Google account). */
@@ -84,8 +101,8 @@ export class AuthController {
 
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('exchange')
-  exchange(@Body() dto: ExchangeDto) {
-    return this.auth.exchangeLoginCode(dto.code);
+  async exchange(@Body() dto: ExchangeDto, @Res({ passthrough: true }) res: Response) {
+    return withSession(res, await this.auth.exchangeLoginCode(dto.code));
   }
 
   // ---- email verification, password reset, account changes ----
@@ -118,8 +135,8 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @UseGuards(AuthGuard('jwt'))
   @Post('change-password')
-  changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
-    return this.account.changePassword(req.user.userId, dto.currentPassword, dto.newPassword);
+  async changePassword(@Req() req: any, @Body() dto: ChangePasswordDto, @Res({ passthrough: true }) res: Response) {
+    return withSession(res, await this.account.changePassword(req.user.userId, dto.currentPassword, dto.newPassword));
   }
 
   @Throttle({ default: { limit: 5, ttl: 60_000 } })

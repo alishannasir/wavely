@@ -8,7 +8,7 @@ let retries = 0;
 export function getSocket(): Socket {
   if (!socket) {
     const base = import.meta.env.VITE_WS_URL ?? 'http://localhost:3000';
-    const s = io(base, { auth: { token: useAuth.getState().token, deviceId: getDeviceId() } });
+    const s = io(base, { withCredentials: true, auth: { deviceId: getDeviceId() } });
     // The server rejects with `connect_error` (UNAUTHORIZED / BANNED / REGION_BLOCKED / SERVER_ERROR).
     // Socket.IO does not retry those by itself; SERVER_ERROR is a temporary hiccup, so retry it.
     s.on('connect_error', (err) => {
@@ -27,11 +27,11 @@ export function getSocket(): Socket {
   return socket;
 }
 
-// The socket authenticates once, with the token it was created with. Whenever the token changes
+// The socket authenticates once, with the cookie it connects with. Whenever the login changes
 // (login, logout, guest start, upgrade, expiry) the old socket must go, or the next user would
 // keep acting as the previous one.
 useAuth.subscribe((state, prev) => {
-  if (state.token !== prev.token) resetSocket();
+  if (state.sessionExpiresAt !== prev.sessionExpiresAt || state.user?.id !== prev.user?.id) resetSocket();
 });
 
 export function resetSocket(): void {

@@ -101,7 +101,13 @@ export async function makeRole(email: string, role: 'MODERATOR' | 'ADMIN'): Prom
 
 /** Starts the page already signed in (as if the user had logged in). Call before page.goto. */
 export async function signedIn(context: BrowserContext, auth: Pick<Auth, 'access_token' | 'user'>): Promise<void> {
-  await context.addInitScript((a) => localStorage.setItem('ovc-auth', JSON.stringify({ state: { token: a.access_token, user: a.user }, version: 0 })), auth);
+  // The login is an HttpOnly cookie (cookies are shared across ports on localhost); the page only remembers when it ends.
+  await context.addCookies([{ name: 'ovc_session', value: auth.access_token, domain: 'localhost', path: '/', httpOnly: true, sameSite: 'Lax' }]);
+  const exp = JSON.parse(Buffer.from(auth.access_token.split('.')[1], 'base64url').toString()).exp * 1000;
+  await context.addInitScript(
+    (a) => localStorage.setItem('ovc-auth', JSON.stringify({ state: { sessionExpiresAt: a.exp, user: a.user }, version: 0 })),
+    { exp, user: auth.user },
+  );
 }
 
 export async function signedInPage(browser: Browser, request: APIRequestContext, opts: { name?: string; role?: 'MODERATOR' | 'ADMIN'; device?: 'desktop' | 'mobile' } = {}) {

@@ -79,7 +79,7 @@ export default function Chat() {
   const isDirect = Boolean(friendParam || acceptParam);
 
   const user = useAuth((s) => s.user);
-  const token = useAuth((s) => s.token);
+  const token = useAuth((s) => s.sessionExpiresAt); // changes whenever the login does
   const filters = useFilters();
   const { data: billing } = useBillingStatus(Boolean(token));
 
