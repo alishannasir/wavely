@@ -17,6 +17,15 @@ export default {
         muted: c('muted'),
         warn: c('warn'),
       },
+      keyframes: {
+        'logo-bob': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-6px)' },
+        },
+      },
+      animation: {
+        'logo-bob': 'logo-bob 1.3s ease-in-out infinite',
+      },
       fontFamily: {
         display: ['Fredoka', 'system-ui', 'sans-serif'],
         body: ['"Source Sans 3"', 'system-ui', 'sans-serif'],
