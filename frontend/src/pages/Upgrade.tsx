@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useBillingStatus } from '../lib/billing';
 import { useAuth } from '../store/auth';
@@ -96,7 +96,9 @@ function UpgradeInner() {
 }
 
 export default function Upgrade() {
-  const isGuest = useAuth((s) => s.user?.isGuest);
+  const user = useAuth((s) => s.user);
+  const isGuest = user?.isGuest;
+  if (!user) return <Navigate to="/" replace />;
   if (isGuest) {
     return (
       <AppShell title="Premium">

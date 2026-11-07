@@ -1,0 +1,28 @@
+# Everything the end-to-end tests need, on their own ports so they never touch your dev stack.
+name: ovc-e2e
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: e2e
+      POSTGRES_DB: videochat
+    ports: ["127.0.0.1:55440:5432"]
+    tmpfs: ["/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d videochat"]
+      interval: 2s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:56440:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      retries: 30
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:1125:1025", "127.0.0.1:8125:8025"]
+  livekit:
+    image: livekit/livekit-server:latest
+    network_mode: host # WebRTC between the headless browser and the server needs real host networking
+    command: ["--config-body", "port: 17880\nrtc:\n  tcp_port: 17881\n  udp_port: 17882\n  use_external_ip: false\nkeys:\n  devkey: secret\n"]

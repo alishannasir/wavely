@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import AppShell from '../components/nav/AppShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import Modal from '../components/ui/Modal';
@@ -105,10 +105,7 @@ export default function Account() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  if (!user) {
-    navigate('/');
-    return null;
-  }
+  if (!user) return <Navigate to="/" replace />;
   const hasPassword = user.authProvider === 'EMAIL';
 
   async function download() {

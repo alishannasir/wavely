@@ -1,5 +1,5 @@
 import { ReactNode, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import AppShell from '../components/nav/AppShell';
 import VerifyBanner from '../components/VerifyBanner';
 import ChunkyButton from '../components/ui/ChunkyButton';
@@ -42,10 +42,7 @@ export default function Profile() {
   const [showDevices, setShowDevices] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);
 
-  if (!user) {
-    navigate('/');
-    return null;
-  }
+  if (!user) return <Navigate to="/" replace />;
 
   const plan = user.isGuest ? 'Guest' : billing?.plan === 'MONTHLY' || billing?.plan === 'ANNUAL' ? 'Premium' : billing?.plan === 'TRIAL' ? 'Free trial' : 'Free';
   const initial = (user.displayName ?? '?').slice(0, 1).toUpperCase();

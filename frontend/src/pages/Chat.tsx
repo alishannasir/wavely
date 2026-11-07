@@ -1,5 +1,5 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Room } from 'livekit-client';
 import Logo from '../components/brand/Logo';
 import BottomNav from '../components/nav/BottomNav';
@@ -541,11 +541,7 @@ export default function Chat() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isDirect]);
 
-  if (!user) {
-    // Direct visit without a session: send people to the start page (it creates a guest after the rules notice).
-    navigate('/');
-    return null;
-  }
+  if (!user) return <Navigate to="/" replace />;
 
   const inCall = phase === 'in-call';
   const busy = phase !== 'idle';

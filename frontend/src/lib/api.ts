@@ -19,7 +19,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     window.location.assign('/unavailable');
     throw new Error('Region blocked');
   }
-  if (res.status === 401 && token && !path.startsWith('/auth/') && !path.startsWith('/appeals')) {
+  // Only a dead session ends the session. A 401 with another message (e.g. "Your password is not correct")
+  // is an ordinary error the screen should show.
+  const sessionEnded = res.status === 401 && (body?.message === 'Unauthorized' || /session has ended/i.test(String(body?.message ?? '')));
+  if (sessionEnded && token && !path.startsWith('/auth/') && !path.startsWith('/appeals')) {
     // Expired or revoked session (guest tokens last 4h): start over from the landing page.
     useAuth.getState().logout();
     window.location.assign('/');

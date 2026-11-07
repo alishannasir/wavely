@@ -35,6 +35,10 @@ Email verification, forgot/reset password, change password/email, data export an
 
 `docker-compose.prod.yml` builds production images and runs Caddy (website + HTTPS), the API, Postgres and Redis. Step-by-step setup, Cloudflare, LiveKit, backups and monitoring: **docs/DEPLOY.md**.
 
+## End-to-end tests
+
+`cd e2e && npm run e2e` runs real browsers against the real stack (video between two browsers, email, reports, moderation, appeals, phone layout) on separate ports. See `e2e/README.md`.
+
 ## Tests and checks
 
 Redis-backed matching tests are skipped unless you point them at a throwaway Redis (they flush it!):
