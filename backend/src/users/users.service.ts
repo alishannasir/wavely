@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { sanitizeUser } from '../account/session-token.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
@@ -9,8 +10,7 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   private sanitize(user: User) {
-    const { passwordHash: _ph, ...safe } = user;
-    return safe;
+    return sanitizeUser(user);
   }
 
   async findMe(userId: string) {

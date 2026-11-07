@@ -38,6 +38,12 @@ enum AppealStatus {
   REJECTED
 }
 
+enum EmailTokenType {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+  CHANGE_EMAIL
+}
+
 enum BanType {
   IP
   DEVICE
@@ -80,6 +86,12 @@ model User {
   // Guests: random chat only, no email. Self-attested 18+ (adultAttestedAt) instead of a birthdate.
   isGuest       Boolean      @default(false)
   adultAttestedAt DateTime?
+  // Proof the user controls the mailbox (set when they click the link; Google accounts are pre-verified).
+  emailVerifiedAt DateTime?
+  // Bumped on password change/reset and email change: older login tokens stop working.
+  tokenVersion  Int          @default(0)
+  // Set when the account was deleted but the row is kept (anonymised) for moderation records.
+  deletedAt     DateTime?
   passwordHash  String?
   authProvider  AuthProvider
   displayName   String?
@@ -111,6 +123,7 @@ model User {
   reportsReceived  Report[]      @relation("ReportReported")
   dailyUsage       DailyUsage[]
   appeals          Appeal[]
+  emailTokens      EmailToken[]
   blocksMade       Block[]      @relation("BlockBlocker")
   blocksReceived   Block[]      @relation("BlockBlocked")
 
@@ -288,4 +301,20 @@ model Appeal {
   @@index([status, createdAt])
   @@index([userId, createdAt])
   @@map("appeals")
+}
+
+// One-time links sent by email. Only a SHA-256 hash of the secret is stored.
+model EmailToken {
+  id        String         @id @default(cuid())
+  userId    String
+  type      EmailTokenType
+  tokenHash String         @unique
+  newEmail  String?        // CHANGE_EMAIL: the address being confirmed
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime       @default(now())
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@map("email_tokens")
 }

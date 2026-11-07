@@ -112,8 +112,11 @@ export class MatchingGateway
       try {
         const token = socket.handshake.auth?.token as string | undefined;
         let userId: string;
+        let tokenVersion = 0;
         try {
-          userId = this.jwt.verify<{ sub: string }>(token ?? '').sub;
+          const payload = this.jwt.verify<{ sub: string; tv?: number }>(token ?? '');
+          userId = payload.sub;
+          tokenVersion = payload.tv ?? 0;
         } catch {
           return next(new Error('UNAUTHORIZED'));
         }
@@ -133,6 +136,7 @@ export class MatchingGateway
           });
         if (!me) return next(new Error('UNAUTHORIZED'));
         if (me.status === 'BANNED') return next(new Error('BANNED'));
+        if (me.tokenVersion !== tokenVersion) return next(new Error('UNAUTHORIZED')); // signed out by a password/email change
 
         socket.data.userId = userId;
         socket.data.isGuest = me.isGuest;

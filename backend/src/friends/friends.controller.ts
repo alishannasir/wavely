@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { NotGuestGuard } from '../auth/not-guest.guard';
+import { RequireVerifiedGuard } from '../auth/verified.guard';
 import { IsString } from 'class-validator';
 import { FriendsService } from './friends.service';
 
@@ -14,7 +15,7 @@ interface AuthedRequest {
 }
 
 @Controller('friends')
-@UseGuards(AuthGuard('jwt'), NotGuestGuard)
+@UseGuards(AuthGuard('jwt'), NotGuestGuard, RequireVerifiedGuard)
 export class FriendsController {
   constructor(private readonly friends: FriendsService) {}
 

@@ -20,6 +20,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpgradeGuestDto } from './dto/upgrade-guest.dto';
+import { SessionTokenService, sanitizeUser } from '../account/session-token.service';
+import { AccountService } from '../account/account.service';
 
 const TRIAL_DAYS = 3;
 const GUEST_TOKEN_TTL = '4h';
@@ -43,6 +45,8 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     @Inject(REDIS) private readonly redis: Redis,
+    private readonly session: SessionTokenService,
+    private readonly account: AccountService,
   ) {}
 
   onModuleInit() {
@@ -121,6 +125,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         trialEndsAt: this.trialEnd(),
       },
     });
+    void this.account.sendVerificationQuietly(user);
     return this.tokenFor(user);
   }
 
@@ -188,15 +193,11 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
   }
 
   private sanitize(user: User) {
-    const { passwordHash: _ph, ...safe } = user;
-    return safe;
+    return sanitizeUser(user);
   }
 
   private tokenFor(user: User) {
-    return {
-      access_token: this.jwt.sign({ sub: user.id, email: user.email ?? undefined }),
-      user: this.sanitize(user),
-    };
+    return this.session.issue(user);
   }
 
   async register(dto: RegisterDto, country: string | null) {
@@ -218,6 +219,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         trialEndsAt: this.trialEnd(),
       },
     });
+    void this.account.sendVerificationQuietly(user);
     return this.tokenFor(user);
   }
 
@@ -243,6 +245,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
           displayName: profile.displayName,
           avatarUrl: profile.avatarUrl,
           country,
+          emailVerifiedAt: new Date(), // the provider already verified this address
           trialEndsAt: this.trialEnd(),
         },
       });
