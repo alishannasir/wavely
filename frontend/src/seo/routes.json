@@ -1,0 +1,72 @@
+{
+  "siteName": "Wavely",
+  "siteUrl": "https://wavely.space",
+  "routes": [
+    {
+      "path": "/",
+      "title": "Wavely – Free Random Video Chat with People Worldwide",
+      "description": "Meet someone new face to face. Free random video chat with people around the world, no signup needed. 18+ only, with moderation and one-tap reporting.",
+      "h1": "Free random video chat with people around the world",
+      "summary": "Wavely pairs you with a real person for a live video conversation. Press Start, say hello, and press Next whenever you want to move on. No signup needed to try it. 18+ only.",
+      "priority": "1.0"
+    },
+    {
+      "path": "/about",
+      "title": "About Wavely – Friendly Random Video Chat",
+      "description": "Wavely pairs you with another person for a live video chat. Everyone is 18+, accepts the chat rules, and can report anyone in one tap.",
+      "h1": "About Wavely",
+      "summary": "Wavely is random video chat, simplified. Everyone must be 18 or older and accept the chat rules before their first chat. Reports reach our moderators with a screenshot and the recent messages, and repeat offenders are banned, including by device.",
+      "priority": "0.7"
+    },
+    {
+      "path": "/why",
+      "title": "Why People Pick Wavely for Random Video Chat",
+      "description": "Real people, free video chat without an account, and the option to make friends and call them again. See what makes Wavely different.",
+      "h1": "Why people pick Wavely",
+      "summary": "Every conversation is with a real person, live, in seconds. Chat without an account, or create one to add friends, message them and call them whenever you like.",
+      "priority": "0.7"
+    },
+    {
+      "path": "/faq",
+      "title": "Wavely FAQ – Free Chat, Age, Safety and Privacy",
+      "description": "Answers about Wavely: is it free, do you need to sign up, the 18+ rule, whether video is recorded, reporting, blurred video and Premium.",
+      "h1": "Frequently asked questions",
+      "summary": "Answers to the most common questions about Wavely.",
+      "priority": "0.8"
+    },
+    {
+      "path": "/rules",
+      "title": "Chat Rules and Safety Tips – Wavely",
+      "description": "The rules every Wavely user agrees to, how reporting and moderation work, and our advice for staying safe on random video chat.",
+      "h1": "Chat rules",
+      "summary": "The rules every Wavely user agrees to before chatting, how moderation works, and our advice for staying safe.",
+      "priority": "0.7"
+    },
+    {
+      "path": "/terms",
+      "title": "Terms of Service – Wavely",
+      "description": "The terms that apply when you use Wavely.",
+      "h1": "Terms of Service",
+      "summary": "The terms that apply when you use Wavely.",
+      "priority": "0.3"
+    },
+    {
+      "path": "/privacy",
+      "title": "Privacy Policy – Wavely",
+      "description": "How Wavely handles your data: what we collect, how long we keep it and your choices.",
+      "h1": "Privacy Policy",
+      "summary": "How Wavely handles your data: what we collect, how long we keep it and your choices.",
+      "priority": "0.3"
+    }
+  ],
+  "faq": [
+    { "q": "Is Wavely free?", "a": "Yes. You can start chatting for free without an account. Premium removes the daily limits and adds filters." },
+    { "q": "Do I need to sign up?", "a": "No. Press Start chatting and confirm you are 18+. Create an account later to add friends, message them and keep your history." },
+    { "q": "How old do I have to be?", "a": "You must be 18 or older. Accounts under 18 are not allowed and will be banned." },
+    { "q": "Is the video recorded?", "a": "No. Video goes through a secure media server and is not stored. If someone reports you or you report someone, a screenshot and the recent chat lines are saved for moderators and deleted after a retention period." },
+    { "q": "Someone broke the rules. What do I do?", "a": "Press Report on their video, choose a reason and you move on to someone new. Moderators review reports, and repeat offenders are banned, including by device." },
+    { "q": "Why was my video blurred?", "a": "Your device checks the stranger’s video and hides it if it looks explicit. It is also sent to moderators. You can show it anyway or press Next." },
+    { "q": "What do the daily limits mean?", "a": "Free accounts have a daily number of chat minutes and matches. Premium has no limits. The timer in the call shows how much time you have left today." },
+    { "q": "Can I choose who I meet?", "a": "Premium members can pick a country and a gender. If nobody matches for a while, the filters are relaxed so you are not left waiting." }
+  ]
+}

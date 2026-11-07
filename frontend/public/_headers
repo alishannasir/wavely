@@ -8,3 +8,39 @@
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# App and account screens: never show up in search results
+/chat
+  X-Robots-Tag: noindex
+/me
+  X-Robots-Tag: noindex
+/friends
+  X-Robots-Tag: noindex
+/account
+  X-Robots-Tag: noindex
+/upgrade
+  X-Robots-Tag: noindex
+/onboarding
+  X-Robots-Tag: noindex
+/appeal
+  X-Robots-Tag: noindex
+/unavailable
+  X-Robots-Tag: noindex
+/login
+  X-Robots-Tag: noindex
+/signup
+  X-Robots-Tag: noindex
+/forgot-password
+  X-Robots-Tag: noindex
+/reset-password
+  X-Robots-Tag: noindex
+/verify-email
+  X-Robots-Tag: noindex
+/confirm-email
+  X-Robots-Tag: noindex
+/auth/*
+  X-Robots-Tag: noindex
+/admin
+  X-Robots-Tag: noindex
+/admin/*
+  X-Robots-Tag: noindex

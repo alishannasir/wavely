@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react';
+import RouteSeo from './seo/RouteSeo';
 import LoadingLogo from './components/brand/LoadingLogo';
 import { Bone } from './components/ui/Skeleton';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
@@ -58,6 +59,7 @@ function Skeleton() {
 export default function App() {
   return (
     <BrowserRouter>
+      <RouteSeo />
       <Suspense fallback={<Skeleton />}>
         <Routes>
           <Route path="/" element={<Landing />} />
