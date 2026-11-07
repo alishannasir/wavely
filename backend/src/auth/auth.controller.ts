@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
+import { AccountService } from '../account/account.service';
+import { ChangeEmailDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, TokenDto } from './dto/account.dto';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -23,7 +25,10 @@ import { clientIp, sanitizeDeviceId } from '../common/client-info';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly account: AccountService,
+  ) {}
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('register')
@@ -72,6 +77,53 @@ export class AuthController {
   @Post('exchange')
   exchange(@Body() dto: ExchangeDto) {
     return this.auth.exchangeLoginCode(dto.code);
+  }
+
+  // ---- email verification, password reset, account changes ----
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('verify-email')
+  verifyEmail(@Body() dto: TokenDto) {
+    return this.account.verifyEmail(dto.token);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(AuthGuard('jwt'))
+  @Post('verify-email/resend')
+  resendVerification(@Req() req: any) {
+    return this.account.resendVerification(req.user.userId, clientIp(req.headers, req.socket?.remoteAddress));
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: any) {
+    return this.account.forgotPassword(dto.email, clientIp(req.headers, req.socket?.remoteAddress));
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.account.resetPassword(dto.token, dto.password);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AuthGuard('jwt'))
+  @Post('change-password')
+  changePassword(@Req() req: any, @Body() dto: ChangePasswordDto) {
+    return this.account.changePassword(req.user.userId, dto.currentPassword, dto.newPassword);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @UseGuards(AuthGuard('jwt'))
+  @Post('change-email')
+  changeEmail(@Req() req: any, @Body() dto: ChangeEmailDto) {
+    return this.account.requestEmailChange(req.user.userId, dto.password, dto.newEmail, clientIp(req.headers, req.socket?.remoteAddress));
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('confirm-email-change')
+  confirmEmailChange(@Body() dto: TokenDto) {
+    return this.account.confirmEmailChange(dto.token);
   }
 
   @Post('apple')

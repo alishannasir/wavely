@@ -10,6 +10,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { ModerationModule } from './moderation/moderation.module';
 import { BlocksModule } from './blocks/blocks.module';
 import { AppealsModule } from './appeals/appeals.module';
+import { MailModule } from './mail/mail.module';
 import { GeoMiddleware } from './common/geo/geo.middleware';
 import { GeoGuard } from './common/geo/geo.guard';
 import { APP_GUARD } from '@nestjs/core';
@@ -35,6 +36,7 @@ import { HealthController } from './health/health.controller';
     ModerationModule,
     BlocksModule,
     AppealsModule,
+    MailModule,
   ],
   controllers: [HealthController],
   providers: [

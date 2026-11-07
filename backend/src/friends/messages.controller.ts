@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { NotGuestGuard } from '../auth/not-guest.guard';
+import { RequireVerifiedGuard } from '../auth/verified.guard';
 import { MessagesService } from './messages.service';
 
 interface AuthedRequest {
@@ -8,7 +9,7 @@ interface AuthedRequest {
 }
 
 @Controller('messages')
-@UseGuards(AuthGuard('jwt'), NotGuestGuard)
+@UseGuards(AuthGuard('jwt'), NotGuestGuard, RequireVerifiedGuard)
 export class MessagesController {
   constructor(private readonly messages: MessagesService) {}
 

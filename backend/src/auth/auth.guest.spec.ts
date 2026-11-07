@@ -16,7 +16,7 @@ function setup(counts: { device?: number; ip?: number } = {}) {
     expire: jest.fn(),
   };
   const jwt: any = { sign: jest.fn().mockReturnValue('tok') };
-  return { svc: new AuthService(prisma, jwt, redis), prisma, jwt };
+  return { svc: new AuthService(prisma, jwt, redis, { issue: jest.fn() } as any, { sendVerificationQuietly: jest.fn() } as any), prisma, jwt };
 }
 
 const ctx = { ip: '1.2.3.4', deviceId: 'dev-0123456789abcdef', country: 'US' };

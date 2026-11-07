@@ -1,6 +1,7 @@
 import { Body, Controller, Get, NotFoundException, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { NotGuestGuard } from '../auth/not-guest.guard';
+import { RequireVerifiedGuard } from '../auth/verified.guard';
 import { IsIn } from 'class-validator';
 import { StripeService } from './stripe.service';
 import { EntitlementsService } from './entitlements.service';
@@ -24,13 +25,13 @@ export class BillingController {
     private readonly prisma: PrismaService,
   ) {}
 
-  @UseGuards(NotGuestGuard)
+  @UseGuards(NotGuestGuard, RequireVerifiedGuard)
   @Post('checkout')
   checkout(@Req() req: AuthedRequest, @Body() dto: CheckoutDto) {
     return this.stripe.createCheckout(req.user.userId, dto.plan);
   }
 
-  @UseGuards(NotGuestGuard)
+  @UseGuards(NotGuestGuard, RequireVerifiedGuard)
   @Post('portal')
   portal(@Req() req: AuthedRequest) {
     return this.stripe.createPortal(req.user.userId);
