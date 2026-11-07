@@ -14,6 +14,8 @@ export class AppThrottlerGuard extends ThrottlerGuard {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') return true;
+    // Automated end-to-end tests make hundreds of requests from one address. Never honoured in production.
+    if (process.env.THROTTLE_DISABLED === 'true' && process.env.NODE_ENV !== 'production') return true;
     return super.canActivate(context);
   }
 }

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
@@ -180,7 +180,9 @@ function FriendsInner() {
 }
 
 export default function Friends() {
-  const isGuest = useAuth((s) => s.user?.isGuest);
+  const user = useAuth((s) => s.user);
+  const isGuest = user?.isGuest;
+  if (!user) return <Navigate to="/" replace />;
   if (isGuest) {
     return (
       <AppShell title="Friends">

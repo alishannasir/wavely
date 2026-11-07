@@ -11,8 +11,12 @@ export const TOKEN_TTL_MS: Record<EmailTokenType, number> = {
   RESET_PASSWORD: 1 * HOUR,
   CHANGE_EMAIL: 1 * HOUR,
 };
-const MAILS_PER_ADDRESS_PER_HOUR = 3;
-const MAILS_PER_IP_PER_HOUR = 10;
+const envInt = (name: string, fallback: number) => {
+  const n = parseInt(process.env[name] ?? '', 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+const MAILS_PER_ADDRESS_PER_HOUR = () => envInt('MAIL_LIMIT_PER_ADDRESS', 3);
+const MAILS_PER_IP_PER_HOUR = () => envInt('MAIL_LIMIT_PER_IP', 10);
 
 export const hashToken = (raw: string) => createHash('sha256').update(raw).digest('hex');
 
@@ -57,7 +61,7 @@ export class EmailTokensService {
       if (n === 1) await this.redis.expire(key, 3600);
       if (n > limit) throw new HttpException('Too many emails requested. Please try again later.', HttpStatus.TOO_MANY_REQUESTS);
     };
-    await bump(`mail:addr:${address.toLowerCase()}`, MAILS_PER_ADDRESS_PER_HOUR);
-    if (ip) await bump(`mail:ip:${ip}`, MAILS_PER_IP_PER_HOUR);
+    await bump(`mail:addr:${address.toLowerCase()}`, MAILS_PER_ADDRESS_PER_HOUR());
+    if (ip) await bump(`mail:ip:${ip}`, MAILS_PER_IP_PER_HOUR());
   }
 }
