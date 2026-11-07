@@ -26,6 +26,12 @@ Update later: `git pull && docker compose -f docker-compose.prod.yml up -d --bui
 ## 3. LiveKit Cloud (video)
 Create a project at livekit.io, then put the project's `wss://…livekit.cloud` URL, API key and API secret in `.env` (`LIVEKIT_API_URL` can stay empty: it defaults to `LIVEKIT_URL`). The free plan allows roughly 35-40 hours of 1:1 calls per month; check the current limits on their pricing page. Test one call over mobile data (TURN fallback) before launch.
 
+## 4a. Email
+Verification, password reset and security notices need real email. Pick a provider (Resend is the easiest start: 3,000 mails a month free), verify your sending domain there (it gives you DNS records for SPF/DKIM), then in `.env`:
+- Resend API: `MAIL_TRANSPORT=resend`, `RESEND_API_KEY=...`, `MAIL_FROM="Wavely <no-reply@yourdomain.com>"`
+- or any SMTP provider (Postmark, Amazon SES, Mailgun...): `MAIL_TRANSPORT=smtp`, `MAIL_SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM`.
+Once real delivery is configured, friends, messages and payments require a confirmed email (`REQUIRE_EMAIL_VERIFICATION` overrides this). Send yourself a verification and a reset email before launch and check they reach the inbox, not spam. Do not switch to the `console` transport in production: nobody would receive anything.
+
 ## 4. Payments and login
 - **Stripe:** live keys + `STRIPE_PRICE_MONTHLY/ANNUAL`; webhook endpoint `https://DOMAIN/api/billing/webhook` (events: `checkout.session.completed`, `invoice.payment_failed`, `customer.subscription.updated/deleted`), its secret in `STRIPE_WEBHOOK_SECRET`.
 - **Google:** OAuth client with redirect URI `https://DOMAIN/api/auth/google/callback`, and `GOOGLE_CALLBACK_URL` set to the same.

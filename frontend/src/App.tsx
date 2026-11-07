@@ -12,6 +12,11 @@ const Profile = lazy(() => import('./pages/Profile'));
 const AdminLayout = lazy(() => import('./pages/admin/AdminLayout'));
 const AdminQueue = lazy(() => import('./pages/admin/Queue'));
 const AdminReport = lazy(() => import('./pages/admin/ReportDetail'));
+const Account = lazy(() => import('./pages/Account'));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const VerifyEmail = lazy(() => import('./pages/EmailLink').then((m) => ({ default: m.VerifyEmail })));
+const ConfirmEmailChange = lazy(() => import('./pages/EmailLink').then((m) => ({ default: m.ConfirmEmailChange })));
 const Appeal = lazy(() => import('./pages/Appeal'));
 const AdminAppeals = lazy(() => import('./pages/admin/Appeals'));
 const AdminUsers = lazy(() => import('./pages/admin/Users'));
@@ -65,6 +70,11 @@ export default function App() {
           <Route path="/start" element={<ToChat />} />
           <Route path="/call" element={<ToChat />} />
           <Route path="/appeal" element={<Appeal />} />
+          <Route path="/account" element={<Account />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route path="/confirm-email" element={<ConfirmEmailChange />} />
           <Route path="/me" element={<Profile />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminQueue />} />

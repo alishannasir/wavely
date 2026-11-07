@@ -27,6 +27,10 @@ cd backend && npm install && npx prisma generate && npx prisma db push && npm ru
 
 The backend reads `.env` from `backend/` or the repo root.
 
+## Account features
+
+Email verification, forgot/reset password, change password/email, data export and account deletion live under `/account` (and the email links under `/verify-email`, `/reset-password`, `/confirm-email`). Emails go through `MAIL_TRANSPORT` (see `.env.example`). Locally the default prints them in the API log; for a real inbox view run `docker compose --profile mail up` and set `MAIL_TRANSPORT=smtp`, `MAIL_SMTP_HOST=mailpit`, `MAIL_SMTP_PORT=1025`, then open http://localhost:8025. Changing a password or email signs the account out on every other device. Deleting an account erases personal data; users who appear in safety reports are anonymised instead so the records and legal holds stay intact.
+
 ## Production
 
 `docker-compose.prod.yml` builds production images and runs Caddy (website + HTTPS), the API, Postgres and Redis. Step-by-step setup, Cloudflare, LiveKit, backups and monitoring: **docs/DEPLOY.md**.

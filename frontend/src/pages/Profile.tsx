@@ -1,6 +1,7 @@
 import { ReactNode, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import AppShell from '../components/nav/AppShell';
+import VerifyBanner from '../components/VerifyBanner';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import { BlockedModal, FiltersModal, GenderModal, SettingsModal, genderEmoji } from '../components/chat/modals';
 import { useBillingStatus } from '../lib/billing';
@@ -63,6 +64,8 @@ export default function Profile() {
           </div>
         </div>
 
+        <VerifyBanner />
+
         {user.isGuest && (
           <div className="rounded-2xl bg-brand p-4 text-white">
             <p className="font-display text-lg font-semibold">Create a free account</p>
@@ -76,6 +79,7 @@ export default function Profile() {
           <Row label="Country filter" value={filters.preferredCountry ? `${flagEmoji(filters.preferredCountry)} ${filters.preferredCountry}` : 'Anywhere'} onClick={() => setShowFilters(true)} />
           <Row label="Camera & microphone" onClick={() => setShowDevices(true)} />
           <Row label="Blocked people" onClick={() => setShowBlocked(true)} />
+          <Row label="Account & security" to="/account" />
         </Group>
 
         {(user.role === 'MODERATOR' || user.role === 'ADMIN') && (
