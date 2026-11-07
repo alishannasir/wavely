@@ -84,6 +84,18 @@ export class StripeService {
     return { received: true };
   }
 
+  /** Cancels every live subscription of a user (account deletion). Best effort: never throws. */
+  async cancelSubscriptionsFor(userId: string): Promise<void> {
+    const subs = await this.prisma.subscription.findMany({ where: { userId, stripeSubscriptionId: { not: null }, status: { not: 'CANCELED' } } });
+    for (const s of subs) {
+      try {
+        await this.stripe.subscriptions.cancel(s.stripeSubscriptionId!);
+      } catch (err) {
+        this.logger.warn(`Could not cancel Stripe subscription ${s.stripeSubscriptionId}: ${(err as Error).message}`);
+      }
+    }
+  }
+
   private async upsertSubscription(userId: string, sub: Stripe.Subscription) {
     const status =
       sub.status === 'active' || sub.status === 'trialing'
