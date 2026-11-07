@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import PageShell from '../../components/ui/PageShell';
 import { BRAND } from '../../brand';
 
@@ -35,6 +36,15 @@ export default function About() {
           </p>
         </section>
       </div>
+      <section className="mx-auto mt-8 max-w-2xl rounded-3xl bg-white p-6 text-center shadow-sm">
+        <h2 className="mb-2 font-display text-2xl text-brand">Questions or feedback?</h2>
+        <p className="text-muted">
+          Email us at <a href={`mailto:${BRAND.supportEmail}`} className="font-semibold text-accent underline">{BRAND.supportEmail}</a>.
+          You can also read the <Link to="/rules" className="font-semibold text-accent underline">chat rules</Link>, the{' '}
+          <Link to="/faq" className="font-semibold text-accent underline">FAQ</Link> and our{' '}
+          <Link to="/guides" className="font-semibold text-accent underline">guides</Link>.
+        </p>
+      </section>
     </PageShell>
   );
 }

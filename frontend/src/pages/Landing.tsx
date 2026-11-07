@@ -7,6 +7,13 @@ import { LogoMark } from '../components/brand/Logo';
 import { useStartChat } from '../components/ui/StartChat';
 import { OnlineCount } from '../lib/online';
 import { BRAND } from '../brand';
+import seo from '../seo/routes.json';
+
+const STEPS = [
+  { n: '1', title: 'Press Start', text: 'Confirm you are 18 or older and allow your camera. No account is needed to try it.' },
+  { n: '2', title: 'Meet someone new', text: 'You are paired with a real person from around the world for a live video chat.' },
+  { n: '3', title: 'Chat, or press Next', text: 'Talk, type in the text chat, or move on to someone else whenever you like. Add people you click with as friends.' },
+];
 
 const FEATURES = [
   { icon: '🎥', title: 'Instant video chat', text: 'One tap and you are talking to someone new. No signup needed to try it.' },
@@ -88,6 +95,40 @@ export default function Landing() {
               <p className="mt-2 text-sm text-muted">{f.text}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-4 py-14" aria-labelledby="how-it-works">
+        <h2 id="how-it-works" className="text-center font-display text-3xl font-semibold text-brand">How {BRAND.name} works</h2>
+        <ol className="mt-8 grid gap-6 md:grid-cols-3">
+          {STEPS.map((s) => (
+            <li key={s.n} className="rounded-3xl bg-white p-6 text-center shadow-sm">
+              <span className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-brand font-display text-lg text-white">{s.n}</span>
+              <h3 className="font-display text-xl font-semibold text-brand">{s.title}</h3>
+              <p className="mt-2 text-sm text-muted">{s.text}</p>
+            </li>
+          ))}
+        </ol>
+        <p className="mt-6 text-center text-muted">
+          New to random video chat? Read our <Link to="/guides/is-random-video-chat-safe" className="font-semibold text-accent underline">safety tips</Link> or
+          see <Link to="/guides/how-random-video-chat-works" className="font-semibold text-accent underline">how matching works</Link>.
+        </p>
+      </section>
+
+      <section className="bg-white py-14" aria-labelledby="home-faq">
+        <div className="mx-auto max-w-3xl px-4">
+          <h2 id="home-faq" className="text-center font-display text-3xl font-semibold text-brand">Questions people ask</h2>
+          <div className="mt-6 space-y-3">
+            {seo.faq.slice(0, 4).map((f) => (
+              <details key={f.q} className="rounded-2xl bg-page p-4">
+                <summary className="cursor-pointer font-semibold">{f.q}</summary>
+                <p className="mt-2 text-muted">{f.a}</p>
+              </details>
+            ))}
+          </div>
+          <p className="mt-5 text-center">
+            <Link to="/faq" className="font-display text-lg text-accent hover:underline">More questions and answers →</Link>
+          </p>
         </div>
       </section>
 
