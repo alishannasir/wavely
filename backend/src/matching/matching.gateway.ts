@@ -28,6 +28,7 @@ import { filterChatText } from '../common/text-filter';
 import { AuthService } from '../auth/auth.service';
 import { corsOrigin } from '../common/cors';
 import { readSessionCookie } from '../auth/session-cookie';
+import { originSecretOk } from '../common/origin-secret';
 import { isCountryAllowed, resolveCountry } from '../common/geo/geo.config';
 
 interface FindMatchPayload {
@@ -111,6 +112,7 @@ export class MatchingGateway
    */
   afterInit(server: Server) {
     server.use(async (socket, next) => {
+      if (!originSecretOk(socket.handshake.headers)) return next(new Error('FORBIDDEN'));
       try {
         // The browser sends the HttpOnly session cookie with the handshake; an explicit token still works (tests, tools).
         const token = (socket.handshake.auth?.token as string | undefined) ?? readSessionCookie(socket.handshake.headers.cookie) ?? undefined;

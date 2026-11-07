@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { RedisIoAdapter } from './redis/redis-io.adapter';
 import { corsOrigin } from './common/cors';
 import { requestLogger } from './common/request-logger';
+import { originSecretMiddleware } from './common/origin-secret';
 import helmet from 'helmet';
 
 async function bootstrap() {
@@ -17,6 +18,8 @@ async function bootstrap() {
   ioAdapter.connectToRedis();
   app.useWebSocketAdapter(ioAdapter);
   // Security headers. The API serves JSON only; the frontend gets its own CSP from the web server.
+  // Only Cloudflare may reach the API when ORIGIN_SECRET is set (see docs/DEPLOY.md).
+  app.use(originSecretMiddleware);
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
   app.use(requestLogger);
   app.setGlobalPrefix('api');
