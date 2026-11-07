@@ -1,4 +1,5 @@
 import { Suspense, lazy } from 'react';
+import LoadingLogo from './components/brand/LoadingLogo';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 
 // Route-level code splitting: initial bundle only ships landing/auth.
@@ -38,13 +39,17 @@ function ToChat() {
   return <Navigate to={`/chat${search}`} replace />;
 }
 
+/** Suspense fallback while a route chunk loads: animated logo (sad -> smile) over a page skeleton. */
 function Skeleton() {
   return (
-    <div className="min-h-screen flex flex-col gap-4 p-6 max-w-md mx-auto animate-pulse">
-      <div className="h-8 w-2/3 rounded bg-zinc-800" />
-      <div className="h-4 w-full rounded bg-zinc-800" />
-      <div className="h-4 w-5/6 rounded bg-zinc-800" />
-      <div className="h-12 w-full rounded-xl bg-zinc-800 mt-4" />
+    <div className="min-h-screen flex flex-col items-center gap-8 p-6 max-w-md mx-auto" aria-busy="true">
+      <LoadingLogo size={96} className="mt-[12vh]" />
+      <div className="w-full flex flex-col gap-4 animate-pulse" aria-hidden="true">
+        <div className="h-8 w-2/3 rounded bg-line" />
+        <div className="h-4 w-full rounded bg-line" />
+        <div className="h-4 w-5/6 rounded bg-line" />
+        <div className="h-12 w-full rounded-xl bg-line mt-4" />
+      </div>
     </div>
   );
 }
