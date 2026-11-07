@@ -20,11 +20,19 @@ export async function resetRuntime(): Promise<void> {
 export const uniq = (prefix: string) => `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 const MEDIA = { permissions: ['camera', 'microphone'] as string[] };
+const opened: BrowserContext[] = [];
+
+/** Closes every browser context a test opened, so sockets, calls and fake cameras never leak into the next test. */
+export async function closeContexts(): Promise<void> {
+  await Promise.all(opened.splice(0).map((c) => c.close().catch(() => undefined)));
+}
 
 /** A fresh browser context = a separate person (own storage, own device id). */
 export async function newContext(browser: Browser, device: 'desktop' | 'mobile' = 'desktop'): Promise<BrowserContext> {
   const base = device === 'mobile' ? devices['Pixel 7'] : { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } };
-  return browser.newContext({ ...base, ...MEDIA, baseURL: 'http://localhost:5190' });
+  const context = await browser.newContext({ ...base, ...MEDIA, baseURL: 'http://localhost:5190' });
+  opened.push(context);
+  return context;
 }
 
 export async function startAsGuest(page: Page): Promise<void> {
@@ -59,6 +67,9 @@ export async function connectedPair(browser: Browser): Promise<{ a: Page; b: Pag
   await pressStart(b);
   await waitInCall(a);
   await waitInCall(b);
+  // "Connection established" shows as soon as the match is found; the call is truly live once the volume control appears
+  await expect(a.getByLabel('Volume')).toBeVisible({ timeout: 30_000 });
+  await expect(b.getByLabel('Volume')).toBeVisible({ timeout: 30_000 });
   return { a, b };
 }
 

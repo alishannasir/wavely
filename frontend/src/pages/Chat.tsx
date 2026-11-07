@@ -1,6 +1,6 @@
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import type { Room } from 'livekit-client';
+import type { LocalAudioTrack, LocalVideoTrack, Room } from 'livekit-client';
 import Logo from '../components/brand/Logo';
 import BottomNav from '../components/nav/BottomNav';
 import ChunkyButton from '../components/ui/ChunkyButton';
@@ -35,6 +35,14 @@ interface MatchPayload {
 type Phase = 'idle' | 'searching' | 'connecting' | 'in-call';
 
 class StaleMatch extends Error {}
+
+interface LocalTracks {
+  video: LocalVideoTrack;
+  audio: LocalAudioTrack;
+}
+
+/** Omit that works on each member of a union (plain Omit would merge them). */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 const RULES_BOT_TEXT =
   'By pressing “Start”, you agree to our rules. Rule violators will be banned. Please keep your face visible in the camera frame.';
@@ -101,7 +109,7 @@ export default function Chat() {
 
   const msgId = useRef(0);
   const [messages, setMessages] = useState<ChatMsg[]>([{ id: 0, kind: 'bot', text: RULES_BOT_TEXT }]);
-  const addMsg = useCallback((m: Omit<ChatMsg, 'id'>) => {
+  const addMsg = useCallback((m: DistributiveOmit<ChatMsg, 'id'>) => {
     setMessages((list) => [...list, { ...m, id: ++msgId.current } as ChatMsg].slice(-60));
   }, []);
 
@@ -110,37 +118,60 @@ export default function Chat() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLDivElement>(null);
-  const previewRef = useRef<MediaStream | null>(null);
+  const tracksRef = useRef<LocalTracks | null>(null);
+  const creatingRef = useRef<Promise<void> | null>(null);
+  const lkRef = useRef<typeof import('livekit-client') | null>(null);
   const scannerRef = useRef<NsfwScanner | null>(null);
   const flaggedSessionRef = useRef<string | null>(null);
   const volumeRef = useRef(1);
   const skipRef = useRef<() => void>(() => {});
+  const cidRef = useRef(0);
+  const hiddenNoteRef = useRef(false);
   // Bumped whenever the current call ends or a new one starts, so a slow connection attempt for an
   // older match can tell it is stale and stop instead of overwriting the current state.
   const genRef = useRef(0);
 
-  // ---- own-camera preview (idle and while searching) ----
-  const stopPreview = useCallback(() => {
-    previewRef.current?.getTracks().forEach((t) => t.stop());
-    previewRef.current = null;
+  // ---- camera and microphone ----
+  // The camera and microphone are opened ONCE and stay open between matches (they are published into each
+  // new room and unpublished when it ends), so pressing Next never restarts the camera or flashes the light.
+  const loadLivekit = useCallback(async () => (lkRef.current ??= await import('livekit-client')), []);
+
+  /** Opens the camera + mic if they are not open yet, and shows the camera in my own panel. Throws on failure. */
+  const openTracks = useCallback(async (): Promise<LocalTracks> => {
+    if (!tracksRef.current) {
+      creatingRef.current ??= (async () => {
+        const lk = await loadLivekit();
+        const { videoDeviceId, audioDeviceId } = useDevices.getState();
+        const created = await lk.createLocalTracks({
+          video: videoDeviceId ? { deviceId: videoDeviceId } : true,
+          audio: audioDeviceId ? { deviceId: audioDeviceId } : true,
+        });
+        tracksRef.current = {
+          video: created.find((t) => t.kind === 'video') as LocalVideoTrack,
+          audio: created.find((t) => t.kind === 'audio') as LocalAudioTrack,
+        };
+      })().finally(() => {
+        creatingRef.current = null;
+      });
+      await creatingRef.current;
+    }
+    const tracks = tracksRef.current!;
+    if (localVideoRef.current) tracks.video.attach(localVideoRef.current);
+    return tracks;
+  }, [loadLivekit]);
+
+  /** Closes the camera and microphone (leaving the screen, or after choosing other devices). */
+  const releaseTracks = useCallback(() => {
+    const t = tracksRef.current;
+    tracksRef.current = null;
+    t?.video.stop();
+    t?.audio.stop();
   }, []);
 
   const startPreview = useCallback(async () => {
-    stopPreview();
     setPreviewError(null);
     try {
-      const { videoDeviceId, audioDeviceId } = useDevices.getState();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: videoDeviceId ? { deviceId: { ideal: videoDeviceId } } : true,
-        audio: audioDeviceId ? { deviceId: { ideal: audioDeviceId } } : true,
-      });
-      // A match may have started while the browser was asking for permission: the call owns the camera then.
-      if (phaseRef.current === 'connecting' || phaseRef.current === 'in-call') {
-        stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      previewRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      await openTracks();
     } catch (err) {
       const name = (err as DOMException).name;
       setPreviewError(
@@ -151,7 +182,7 @@ export default function Chat() {
             : 'Could not open your camera.',
       );
     }
-  }, [stopPreview]);
+  }, [openTracks]);
 
   const stopScanner = useCallback(() => {
     scannerRef.current?.stop();
@@ -164,7 +195,7 @@ export default function Chat() {
     stopScanner();
     const room = roomRef.current;
     roomRef.current = null;
-    await room?.disconnect();
+    await room?.disconnect(false); // false = keep my camera and microphone open
     setMicOn(true);
     setCamOn(true);
   }, [stopScanner]);
@@ -226,14 +257,14 @@ export default function Chat() {
     const onMatch = async (payload: MatchPayload) => {
       const gen = ++genRef.current;
       const stale = () => gen !== genRef.current;
-      // A new match replaces whatever room is still open; the call needs the camera, so release the preview.
+      // A new match replaces whatever room is still open. The camera stays on: only the room goes.
       stopScanner();
-      stopPreview();
       const previous = roomRef.current;
       roomRef.current = null;
-      void previous?.disconnect();
+      void previous?.disconnect(false);
 
       sessionRef.current = payload;
+      hiddenNoteRef.current = false;
       setLimitAt(typeof payload.limitSeconds === 'number' ? Date.now() + payload.limitSeconds * 1000 : null);
       setMessages([{ id: ++msgId.current, kind: 'bot', country: payload.peer.country }]);
       setPeer(payload.peer);
@@ -242,7 +273,7 @@ export default function Chat() {
       let room: Room | null = null;
       try {
         // LiveKit SDK is lazy-loaded only when a call actually starts.
-        const { Room: LKRoom, RoomEvent, Track } = await import('livekit-client');
+        const { Room: LKRoom, RoomEvent, Track } = await loadLivekit();
         if (stale()) return;
         const { videoDeviceId, audioDeviceId } = useDevices.getState();
         room = new LKRoom({
@@ -263,19 +294,19 @@ export default function Chat() {
         });
         await room.connect(payload.url, payload.token);
         if (stale()) throw new StaleMatch();
-        await room.localParticipant.enableCameraAndMicrophone();
+        const tracks = await openTracks(); // already open after the preview; opens them for friend calls
         if (stale()) throw new StaleMatch();
-        const camPub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-        if (camPub?.videoTrack && localVideoRef.current) {
-          camPub.videoTrack.attach(localVideoRef.current);
-        }
+        await Promise.all([tracks.video.unmute(), tracks.audio.unmute()]);
+        await room.localParticipant.publishTrack(tracks.video);
+        await room.localParticipant.publishTrack(tracks.audio);
+        if (stale()) throw new StaleMatch();
         setMicOn(true);
         setCamOn(true);
         go('in-call');
       } catch (err) {
         // The match was superseded (peer left, skipped, new match): just release the half-open room.
         if (err instanceof StaleMatch || stale()) {
-          if (roomRef.current !== room) void room?.disconnect();
+          if (roomRef.current !== room) void room?.disconnect(false);
           return;
         }
         // Real failure (camera/mic denied, LiveKit unreachable): don't leave the other person hanging.
@@ -334,6 +365,16 @@ export default function Chat() {
 
     const onChat = (msg: { text: string }) => addMsg({ kind: 'peer', text: msg.text });
 
+    // The server hid something in what I sent (swear words, links, contact details): show what they see.
+    const onChatAck = (ack: { cid?: number; text: string; links?: boolean }) => {
+      setMessages((list) => list.map((m) => (m.kind === 'me' && m.cid === ack.cid ? { ...m, text: ack.text } : m)));
+      if (!hiddenNoteRef.current) {
+        hiddenNoteRef.current = true;
+        addMsg({ kind: 'bot', text: ack.links ? 'Links and contact details are hidden in chat for guests and unconfirmed accounts. Offensive words are hidden for everyone.' : 'Offensive words are hidden in chat.' });
+      }
+    };
+    const onChatWarning = (w: { message: string }) => addMsg({ kind: 'bot', text: w.message });
+
     // The server refuses the connection with a reason (see the gateway's auth middleware).
     const onConnectError = (err: Error) => {
       if (err.message === 'UNAUTHORIZED' || err.message === 'BANNED') {
@@ -370,6 +411,8 @@ export default function Chat() {
     socket.on('peer-left', onPeerLeft);
     socket.on('match-error', onError);
     socket.on('call-chat', onChat);
+    socket.on('call-chat-ack', onChatAck);
+    socket.on('chat-warning', onChatWarning);
     socket.on('connect_error', onConnectError);
     socket.on('session-replaced', onReplaced);
     socket.on('filters-relaxed', onRelaxed);
@@ -393,6 +436,8 @@ export default function Chat() {
       socket.off('peer-left', onPeerLeft);
       socket.off('match-error', onError);
       socket.off('call-chat', onChat);
+      socket.off('call-chat-ack', onChatAck);
+      socket.off('chat-warning', onChatWarning);
       socket.off('connect_error', onConnectError);
       socket.off('session-replaced', onReplaced);
       socket.off('filters-relaxed', onRelaxed);
@@ -401,22 +446,24 @@ export default function Chat() {
       socket.off('call-unavailable', onUnavailable);
       socket.emit('leave');
       void disconnectRoom();
-      stopPreview();
+      releaseTracks();
     };
-  }, [token, navigate, start, disconnectRoom, isDirect, go, addMsg, startPreview, stopPreview, stopScanner]);
+  }, [token, navigate, start, disconnectRoom, isDirect, go, addMsg, startPreview, releaseTracks, stopScanner, loadLivekit, openTracks]);
 
   // ---- actions ----
   async function toggleMic() {
-    const room = roomRef.current;
-    if (!room) return;
-    await room.localParticipant.setMicrophoneEnabled(!micOn);
+    const t = tracksRef.current;
+    if (!t) return;
+    if (micOn) await t.audio.mute();
+    else await t.audio.unmute();
     setMicOn(!micOn);
   }
 
   async function toggleCam() {
-    const room = roomRef.current;
-    if (!room) return;
-    await room.localParticipant.setCameraEnabled(!camOn);
+    const t = tracksRef.current;
+    if (!t) return;
+    if (camOn) await t.video.mute();
+    else await t.video.unmute();
     setCamOn(!camOn);
   }
 
@@ -454,8 +501,9 @@ export default function Chat() {
 
   function sendChat(text: string) {
     if (phaseRef.current !== 'in-call') return;
-    getSocket().emit('call-chat', { text });
-    addMsg({ kind: 'me', text });
+    const cid = ++cidRef.current;
+    getSocket().emit('call-chat', { text, cid });
+    addMsg({ kind: 'me', text, cid });
   }
 
   async function addFriend() {
@@ -698,7 +746,7 @@ export default function Chat() {
           </div>
 
           <div className="absolute right-2 top-2 z-10 h-36 w-28 overflow-hidden rounded-xl border-2 border-white/70 bg-stage md:relative md:inset-auto md:z-0 md:h-auto md:w-auto md:rounded-none md:border-0">
-            <video ref={localVideoRef} autoPlay playsInline muted className={`h-full w-full object-cover ${inCall ? '' : '-scale-x-100'}`} />
+            <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full -scale-x-100 object-cover" />
             {previewError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-stage/90 p-4 text-center text-sm text-white">
                 <p>{previewError}</p>
@@ -769,7 +817,11 @@ export default function Chat() {
         open={showSettings}
         onClose={() => setShowSettings(false)}
         onDevicesChanged={() => {
-          if (phaseRef.current === 'idle' || phaseRef.current === 'searching') void startPreview();
+          // New devices apply when the camera is reopened: only possible between calls.
+          if (phaseRef.current === 'idle' || phaseRef.current === 'searching') {
+            releaseTracks();
+            void startPreview();
+          }
         }}
       />
       <LimitModal open={limitMsg !== null} message={limitMsg} onClose={() => setLimitMsg(null)} />

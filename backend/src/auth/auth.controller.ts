@@ -12,6 +12,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AccountService } from '../account/account.service';
+import { GoogleAuthGuard } from './google-auth.guard';
 import { ChangeEmailDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, TokenDto } from './dto/account.dto';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -58,8 +59,15 @@ export class AuthController {
     return this.auth.login(dto);
   }
 
+  /** A guest asks for a signed token to carry through Google sign-in (so the guest becomes the Google account). */
+  @UseGuards(AuthGuard('jwt'))
+  @Post('google/state')
+  googleState(@Req() req: { user: { userId: string } }) {
+    return this.auth.createGuestMergeState(req.user.userId);
+  }
+
   @Get('google')
-  @UseGuards(AuthGuard('google'))
+  @UseGuards(GoogleAuthGuard)
   google() {
     // Redirects to Google via passport.
   }
@@ -67,7 +75,8 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Req() req: any, @Res() res: Response) {
-    const { user } = await this.auth.oauthLogin(req.user, req.country ?? null);
+    const guestId = this.auth.readGuestMergeState(req.query?.state);
+    const { user } = await this.auth.oauthLogin(req.user, req.country ?? null, guestId);
     const code = await this.auth.createLoginCode(user.id);
     const frontend = primaryFrontendUrl();
     res.redirect(`${frontend}/auth/callback?code=${code}`);

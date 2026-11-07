@@ -10,7 +10,7 @@ import {
 } from '@nestjs/websockets';
 import { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService, QueueEntry, RELAX_COUNTRY_MS, RELAX_GENDER_MS } from './matching.service';
@@ -24,6 +24,7 @@ import { MessagesService } from '../friends/messages.service';
 import { ReportsService } from '../moderation/reports.service';
 import { BansService } from '../moderation/bans.service';
 import { clientIp, sanitizeDeviceId } from '../common/client-info';
+import { filterChatText } from '../common/text-filter';
 import { AuthService } from '../auth/auth.service';
 import { corsOrigin } from '../common/cors';
 import { isCountryAllowed, resolveCountry } from '../common/geo/geo.config';
@@ -140,6 +141,7 @@ export class MatchingGateway
 
         socket.data.userId = userId;
         socket.data.isGuest = me.isGuest;
+        socket.data.emailVerified = !!me.emailVerifiedAt;
         // Every tab/device joins the user's room, so direct emits reach all of them.
         await socket.join(userRoom(userId));
         next();
@@ -480,12 +482,32 @@ export class MatchingGateway
 
   /** In-call text chat. Relayed by the server so it can be attached to abuse reports. */
   @SubscribeMessage('call-chat')
-  async callChat(@ConnectedSocket() client: Socket, @MessageBody() payload?: { text?: string }) {
+  async callChat(@ConnectedSocket() client: Socket, @MessageBody() payload?: { text?: string; cid?: number }) {
     const info = await this.callState.getBySocket(client.id);
     if (!info) return;
+    if (await this.isRepeatSpam(info.userId, payload?.text)) {
+      client.emit('chat-warning', { message: 'Please do not repeat the same message.' });
+      return;
+    }
+    // The original is stored for report evidence; the other person only sees the filtered version.
     const line = await this.callState.pushChat(info.sessionId, info.userId, payload?.text);
     if (!line) return;
-    this.server.to(info.peerSocketId).emit('call-chat', { text: line.text, at: line.at });
+    const filtered = filterChatText(line.text, { allowLinks: !client.data.isGuest && !!client.data.emailVerified });
+    this.server.to(info.peerSocketId).emit('call-chat', { text: filtered.text, at: line.at });
+    if (filtered.changed) {
+      // Tell the sender what the other person sees, so nothing is hidden silently.
+      client.emit('call-chat-ack', { cid: payload?.cid, text: filtered.text, links: filtered.links, profanity: filtered.profanity });
+    }
+  }
+
+  /** The same message more than 3 times in 30 seconds is spam. */
+  private async isRepeatSpam(userId: string, text: unknown): Promise<boolean> {
+    if (typeof text !== 'string') return false;
+    const norm = text.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!norm) return false;
+    const key = `chat:dup:${userId}:${createHash('sha1').update(norm).digest('hex').slice(0, 16)}`;
+    const n = await this.callState.bump(key, 30);
+    return n > 3;
   }
 
   /**
