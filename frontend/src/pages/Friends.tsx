@@ -6,6 +6,7 @@ import { getSocket } from '../lib/socket';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { useAuth } from '../store/auth';
 import AppShell from '../components/nav/AppShell';
+import VerifyBanner from '../components/VerifyBanner';
 import { Card } from '../components/ui/PageShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import Modal from '../components/ui/Modal';
@@ -107,6 +108,7 @@ function FriendsInner() {
     <AppShell title="Friends">
       <div className="mx-auto flex max-w-xl flex-col gap-5">
         <h1 className="hidden font-display text-3xl font-semibold text-brand md:block">Friends</h1>
+        <VerifyBanner />
 
         {requests && requests.length > 0 && (
           <section className="flex flex-col gap-2" aria-label="Friend requests">

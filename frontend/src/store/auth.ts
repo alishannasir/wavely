@@ -6,6 +6,8 @@ export interface User {
   email: string | null;
   isGuest?: boolean;
   role?: 'USER' | 'MODERATOR' | 'ADMIN';
+  emailVerifiedAt?: string | null;
+  authProvider?: 'EMAIL' | 'GOOGLE' | 'APPLE' | 'GUEST';
   displayName?: string | null;
   avatarUrl?: string | null;
   birthdate?: string | null;

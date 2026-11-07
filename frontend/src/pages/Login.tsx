@@ -47,6 +47,7 @@ export default function Login() {
             </p>
           )}
           <ChunkyButton full disabled={busy}>Log in</ChunkyButton>
+          <Link to="/forgot-password" className="text-center text-sm text-accent underline">Forgot your password?</Link>
         </form>
         <div className="my-5 flex items-center gap-3 text-xs text-muted">
           <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />

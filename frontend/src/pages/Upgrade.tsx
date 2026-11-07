@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useBillingStatus } from '../lib/billing';
 import { useAuth } from '../store/auth';
 import AppShell from '../components/nav/AppShell';
+import VerifyBanner from '../components/VerifyBanner';
 import { Card } from '../components/ui/PageShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
 
@@ -51,6 +52,7 @@ function UpgradeInner() {
   return (
     <AppShell title="Premium">
       <Card className="max-w-lg">
+        <VerifyBanner className="mb-4" />
         <h1 className="mb-4 text-center font-display text-3xl font-semibold text-brand">Go Premium</h1>
         <ul className="mb-6 flex flex-col gap-2">
           {PERKS.map((perk) => (

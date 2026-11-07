@@ -43,5 +43,13 @@ services:
       - postgres
       - redis
 
+  # Optional local mail catcher:  docker compose --profile mail up
+  # then set MAIL_TRANSPORT=smtp, MAIL_SMTP_HOST=mailpit, MAIL_SMTP_PORT=1025 in .env and open http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["mail"]
+    ports:
+      - "127.0.0.1:8025:8025"
+
 volumes:
   pgdata:
