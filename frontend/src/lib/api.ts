@@ -4,13 +4,13 @@ import { getDeviceId } from './device';
 export const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api';
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = useAuth.getState().token;
+  const hadSession = useAuth.getState().sessionExpiresAt !== null;
   const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include', // the login is an HttpOnly cookie
     ...options,
     headers: {
       'Content-Type': 'application/json',
       'X-Device-Id': getDeviceId(),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {}),
     },
   });
@@ -22,7 +22,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   // Only a dead session ends the session. A 401 with another message (e.g. "Your password is not correct")
   // is an ordinary error the screen should show.
   const sessionEnded = res.status === 401 && (body?.message === 'Unauthorized' || /session has ended/i.test(String(body?.message ?? '')));
-  if (sessionEnded && token && !path.startsWith('/auth/') && !path.startsWith('/appeals')) {
+  if (sessionEnded && hadSession && !path.startsWith('/auth/') && !path.startsWith('/appeals')) {
     // Expired or revoked session (guest tokens last 4h): start over from the landing page.
     useAuth.getState().logout();
     window.location.assign('/');

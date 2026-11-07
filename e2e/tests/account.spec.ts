@@ -1,5 +1,5 @@
 import { expect, test } from './fixtures';
-import { API, apiRegister, clearMail, linkIn, mailTo, newContext, signedIn, sql, uniq } from './helpers';
+import { API, apiRegister, clearMail, linkIn, mailTo, newContext, signedIn, signedInPage, sql, uniq } from './helpers';
 
 test.beforeEach(async () => {
   await clearMail();
@@ -91,4 +91,19 @@ test('a page for a signed-out visitor sends them to log in', async ({ browser })
   const page = await (await newContext(browser)).newPage();
   await page.goto('/account');
   await expect(page).toHaveURL(/localhost:5190\/$/);
+});
+
+test('the login is an HttpOnly cookie: scripts and saved page data never hold the token', async ({ browser, request }) => {
+  const { page } = await signedInPage(browser, request);
+  await page.goto('/me');
+  await expect(page.getByRole('link', { name: 'Chat' }).first()).toBeVisible(); // signed in via the cookie alone
+  await expect(page).toHaveURL(/\/me$/);
+  const seen = await page.evaluate(() => ({ cookies: document.cookie, saved: localStorage.getItem('ovc-auth') ?? '' }));
+  expect(seen.cookies).not.toContain('ovc_session'); // HttpOnly: invisible to scripts
+  expect(seen.saved).not.toMatch(/eyJ/); // no JWT in storage
+  const cookie = (await page.context().cookies()).find((c) => c.name === 'ovc_session');
+  expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Lax' });
+  // sign out clears it on the server side
+  await page.evaluate(() => fetch('http://localhost:3990/api/auth/logout', { method: 'POST', credentials: 'include' }));
+  expect((await page.context().cookies()).find((c) => c.name === 'ovc_session')).toBeUndefined();
 });

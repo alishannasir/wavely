@@ -16,6 +16,7 @@ import { GeoGuard } from './common/geo/geo.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppThrottlerGuard } from './common/throttler.guard';
+import { CsrfOriginGuard } from './common/csrf-origin.guard';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -41,6 +42,7 @@ import { HealthController } from './health/health.controller';
   controllers: [HealthController],
   providers: [
     { provide: APP_GUARD, useClass: GeoGuard },
+    { provide: APP_GUARD, useClass: CsrfOriginGuard },
     { provide: APP_GUARD, useClass: AppThrottlerGuard },
   ],
 })

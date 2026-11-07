@@ -2,7 +2,7 @@ import { ReactNode, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import RulesModal from '../RulesModal';
 import { startGuestSession } from '../../lib/guest';
-import { isTokenExpired, useAuth } from '../../store/auth';
+import { isSessionExpired, useAuth } from '../../store/auth';
 
 /**
  * The "Start chatting" flow used by every call-to-action: a signed-in user (account or live guest
@@ -12,11 +12,11 @@ import { isTokenExpired, useAuth } from '../../store/auth';
 export function useStartChat(target = '/chat'): { start: () => void; modal: ReactNode } {
   const navigate = useNavigate();
   const user = useAuth((s) => s.user);
-  const token = useAuth((s) => s.token);
+  const sessionExpiresAt = useAuth((s) => s.sessionExpiresAt);
   const [showRules, setShowRules] = useState(false);
 
   const start = () => {
-    if (user && !isTokenExpired(token)) {
+    if (user && !isSessionExpired(sessionExpiresAt)) {
       navigate(target);
       return;
     }

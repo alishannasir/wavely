@@ -26,7 +26,7 @@ function EmailLink({ endpoint, title, success }: { endpoint: string; title: stri
       .then(async () => {
         setState('ok');
         // If this browser is signed in, pick up the new verified / changed email.
-        if (useAuth.getState().token) {
+        if (useAuth.getState().sessionExpiresAt) {
           try {
             useAuth.getState().setUser(await api<User>('/users/me'));
           } catch {

@@ -1,0 +1,69 @@
+ Container ovc-e2e-livekit-1 Running 
+ Container ovc-e2e-postgres-1 Running 
+ Container ovc-e2e-redis-1 Running 
+ Container ovc-e2e-mailpit-1 Running 
+ Container ovc-e2e-redis-1 Waiting 
+ Container ovc-e2e-mailpit-1 Waiting 
+ Container ovc-e2e-livekit-1 Waiting 
+ Container ovc-e2e-postgres-1 Waiting 
+ Container ovc-e2e-livekit-1 Healthy 
+ Container ovc-e2e-redis-1 Healthy 
+ Container ovc-e2e-mailpit-1 Healthy 
+ Container ovc-e2e-postgres-1 Healthy 
+e2e stack is up: site http://localhost:5190, API http://localhost:3990, mail http://localhost:8125
+
+Running 24 tests using 1 worker
+
+[1/24] [desktop] › tests/account.spec.ts:8:1 › sign up, confirm the email from the link, and the banner goes away
+[2/24] [desktop] › tests/account.spec.ts:34:1 › forgot password: reset by email, old password stops working
+[3/24] [desktop] › tests/account.spec.ts:60:1 › account page: change password, download my data, delete the account
+[4/24] [desktop] › tests/account.spec.ts:90:1 › a page for a signed-out visitor sends them to log in
+[5/24] [desktop] › tests/account.spec.ts:96:1 › the login is an HttpOnly cookie: scripts and saved page data never hold the token
+  1) [desktop] › tests/account.spec.ts:96:1 › the login is an HttpOnly cookie: scripts and saved page data never hold the token 
+
+    ReferenceError: signedInPage is not defined
+
+       95 |
+       96 | test('the login is an HttpOnly cookie: scripts and saved page data never hold the token', async ({ browser, request }) => {
+    >  97 |   const { page } = await signedInPage(browser, request);
+          |                    ^
+       98 |   await page.goto('/me');
+       99 |   await expect(page.getByRole('heading', { name: /profile/i }).first()).toBeVisible();
+      100 |   const seen = await page.evaluate(() => ({ cookies: document.cookie, saved: localStorage.getItem('ovc-auth') ?? '' }));
+        at /home/ali-shan/Documents/Work/online-video-chat-main/e2e/tests/account.spec.ts:97:20
+
+    Error Context: results/account-the-login-is-an-Ht-72827-e-data-never-hold-the-token-desktop/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    results/account-the-login-is-an-Ht-72827-e-data-never-hold-the-token-desktop/trace.zip
+    Usage:
+
+        npx playwright show-trace results/account-the-login-is-an-Ht-72827-e-data-never-hold-the-token-desktop/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[6/24] [desktop] › tests/appeal.spec.ts:4:1 › a banned user appeals and a moderator restores the account
+[7/24] [desktop] › tests/call.spec.ts:8:1 › a guest can start without signing up and sees their own camera
+[8/24] [desktop] › tests/call.spec.ts:18:1 › the rules notice must be accepted before a guest session starts
+[9/24] [desktop] › tests/call.spec.ts:27:1 › two guests meet: video both ways, chat, then Esc moves on
+[10/24] [desktop] › tests/call.spec.ts:57:1 › Stop returns to the idle screen and Start works again
+[11/24] [desktop] › tests/call.spec.ts:66:1 › closing the tab ends the call for the other person
+[12/24] [desktop] › tests/call.spec.ts:72:1 › signed-out visitors cannot open the chat screen
+[13/24] [desktop] › tests/call.spec.ts:80:1 › the camera stays on between matches: Next does not restart it, and the next call still has video
+[14/24] [desktop] › tests/call.spec.ts:106:1 › muting works with the persistent camera and microphone
+[15/24] [desktop] › tests/call.spec.ts:117:1 › chat filter: guests cannot send links, swear words are masked, the original is kept as evidence
+[16/24] [desktop] › tests/call.spec.ts:137:1 › chat filter: repeating the same message more than 3 times is blocked
+[17/24] [desktop] › tests/moderation.spec.ts:14:1 › only moderators can open the moderation area
+[18/24] [desktop] › tests/moderation.spec.ts:20:1 › a report travels from a call to the moderator, who escalates and bans
+[19/24] [desktop] › tests/moderation.spec.ts:57:1 › the audit log shows what moderators did
+[20/24] [desktop] › tests/safety.spec.ts:9:1 › reporting someone saves evidence and moves on to the next person
+[21/24] [desktop] › tests/safety.spec.ts:32:1 › blocking someone ends the call and they are never matched again
+[22/24] [desktop] › tests/safety.spec.ts:56:1 › free minutes run out: countdown, then the call ends with the upgrade prompt
+[23/24] [mobile] › tests/mobile.spec.ts:8:1 › phone layout: bottom tab bar, profile tab, no sideways scrolling
+[24/24] [mobile] › tests/mobile.spec.ts:25:1 › phone layout: the tab bar hides during a call and the report button is always visible
+  1 failed
+    [desktop] › tests/account.spec.ts:96:1 › the login is an HttpOnly cookie: scripts and saved page data never hold the token 
+  23 passed (6.0m)
+e2e stack stopped
+exit: 1

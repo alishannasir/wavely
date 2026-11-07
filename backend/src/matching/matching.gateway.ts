@@ -27,6 +27,7 @@ import { clientIp, sanitizeDeviceId } from '../common/client-info';
 import { filterChatText } from '../common/text-filter';
 import { AuthService } from '../auth/auth.service';
 import { corsOrigin } from '../common/cors';
+import { readSessionCookie } from '../auth/session-cookie';
 import { isCountryAllowed, resolveCountry } from '../common/geo/geo.config';
 
 interface FindMatchPayload {
@@ -54,7 +55,7 @@ const userRoom = (userId: string) => `user:${userId}`;
  * All shared state (queue, active calls, pending calls, presence) lives in Redis, and
  * Socket.IO uses the Redis adapter, so several API instances can run side by side.
  */
-@WebSocketGateway({ cors: { origin: corsOrigin } })
+@WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
 export class MatchingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
 {
@@ -111,7 +112,8 @@ export class MatchingGateway
   afterInit(server: Server) {
     server.use(async (socket, next) => {
       try {
-        const token = socket.handshake.auth?.token as string | undefined;
+        // The browser sends the HttpOnly session cookie with the handshake; an explicit token still works (tests, tools).
+        const token = (socket.handshake.auth?.token as string | undefined) ?? readSessionCookie(socket.handshake.headers.cookie) ?? undefined;
         let userId: string;
         let tokenVersion = 0;
         try {

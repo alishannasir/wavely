@@ -187,3 +187,17 @@ describe('mail', () => {
     delete process.env.MAIL_TRANSPORT;
   });
 });
+
+describe('JwtStrategy cookie login', () => {
+  it('accepts the token from the session cookie when there is no Authorization header', async () => {
+    const { JwtService } = await import('@nestjs/jwt');
+    const secret = 'k'.repeat(40);
+    const token = new JwtService({ secret }).sign({ sub: 'u', tv: 0 });
+    const strategy: any = new JwtStrategy({ get: () => secret } as any, { user: { findUnique: jest.fn() } } as any);
+    // passport-jwt keeps the extractor on the strategy
+    const extract = strategy._jwtFromRequest;
+    expect(extract({ headers: { cookie: `ovc_session=${token}` } })).toBe(token);
+    expect(extract({ headers: { authorization: `Bearer ${token}` } })).toBe(token);
+    expect(extract({ headers: {} })).toBeNull();
+  });
+});
