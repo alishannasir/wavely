@@ -12,6 +12,7 @@ import ChunkyButton from '../components/ui/ChunkyButton';
 import Modal from '../components/ui/Modal';
 import FlagPill from '../components/ui/FlagPill';
 import { inputCls } from '../lib/ui';
+import { SkeletonMessages, SkeletonRows } from '../components/ui/Skeleton';
 
 interface Friend {
   userId: string;
@@ -43,7 +44,7 @@ function FriendsInner() {
   const [draft, setDraft] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { data: friends } = useQuery({
+  const { data: friends, isLoading: friendsLoading } = useQuery({
     queryKey: ['friends'],
     queryFn: () => api<Friend[]>('/friends'),
     refetchInterval: 30_000, // keep online dots fresh
@@ -53,7 +54,7 @@ function FriendsInner() {
     queryFn: () => api<FriendRequest[]>('/friends/requests'),
   });
 
-  const { data: messages } = useQuery({
+  const { data: messages, isLoading: messagesLoading } = useQuery({
     queryKey: ['messages', chatWith?.userId],
     queryFn: () => api<Message[]>(`/messages/${chatWith!.userId}`),
     enabled: Boolean(chatWith),
@@ -126,6 +127,7 @@ function FriendsInner() {
         )}
 
         <section className="flex flex-col gap-2" aria-label="Your friends">
+          {friendsLoading && <SkeletonRows rows={4} />}
           {friends && friends.length === 0 && (
             <p className="rounded-2xl bg-white p-5 text-center text-muted shadow-sm">
               No friends yet. Add people you meet in random chat!
@@ -156,6 +158,7 @@ function FriendsInner() {
           {chatWith?.displayName ?? 'Friend'}
         </h2>
         <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
+          {chatWith && messagesLoading && <SkeletonMessages />}
           {messages?.map((message) => (
             <div
               key={message.id}

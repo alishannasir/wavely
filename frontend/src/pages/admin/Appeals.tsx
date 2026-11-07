@@ -7,6 +7,7 @@ import Modal from '../../components/ui/Modal';
 import { api } from '../../lib/api';
 import { timeAgo } from '../../lib/admin';
 import { inputCls } from '../../lib/ui';
+import { SkeletonRows } from '../../components/ui/Skeleton';
 
 interface AppealRow {
   id: string;
@@ -52,7 +53,7 @@ export default function Appeals() {
           </button>
         ))}
       </div>
-      {isLoading && <p className="text-muted">Loading…</p>}
+      {isLoading && <SkeletonRows rows={3} />}
       {isError && <p role="alert" className="text-danger">{(loadError as Error).message}</p>}
       {data && data.items.length === 0 && <p className="rounded-2xl bg-white p-8 text-center text-muted">No appeals here.</p>}
       <ul className="flex flex-col gap-3">

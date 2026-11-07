@@ -5,6 +5,7 @@ import { Badge } from './AdminLayout';
 import ChunkyButton from '../../components/ui/ChunkyButton';
 import { REASON_LABEL, ReportStatus, adminApi, daysUntil, timeAgo } from '../../lib/admin';
 import { flagEmoji } from '../../lib/flag';
+import { SkeletonRows } from '../../components/ui/Skeleton';
 
 const PAGE = 25;
 const selectCls = 'rounded-xl border border-line bg-white px-3 py-2 text-sm';
@@ -69,7 +70,7 @@ export default function Queue() {
         <span className="ml-auto text-sm text-muted">{data ? `${data.total} report${data.total === 1 ? '' : 's'}` : ''} · <kbd className="rounded bg-white px-1">j</kbd>/<kbd className="rounded bg-white px-1">k</kbd> move, <kbd className="rounded bg-white px-1">Enter</kbd> open</span>
       </div>
 
-      {isLoading && <p className="text-muted">Loading…</p>}
+      {isLoading && <SkeletonRows rows={4} />}
       {isError && (
         <p role="alert" className="rounded-2xl bg-white p-4 text-danger">
           {(error as Error).message} <button className="font-semibold underline" onClick={() => refetch()}>Retry</button>

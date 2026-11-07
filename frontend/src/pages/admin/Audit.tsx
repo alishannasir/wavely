@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import ChunkyButton from '../../components/ui/ChunkyButton';
 import { AuditEntry, adminApi, timeAgo } from '../../lib/admin';
+import { SkeletonRows } from '../../components/ui/Skeleton';
 
 const PAGE = 50;
 const LABEL: Record<string, string> = {
@@ -63,7 +64,7 @@ export default function Audit() {
         <span className="ml-auto text-sm text-muted">{data ? `${data.total} entries` : ''}</span>
       </div>
       <div className="rounded-2xl bg-white px-4 py-2 shadow-sm">
-        {isLoading ? <p className="py-4 text-muted">Loading…</p> : isError ? <p role="alert" className="py-4 text-danger">{(error as Error).message}</p> : <AuditList items={data?.items ?? []} empty="Nothing logged yet." />}
+        {isLoading ? <SkeletonRows rows={5} className="py-2" /> : isError ? <p role="alert" className="py-4 text-danger">{(error as Error).message}</p> : <AuditList items={data?.items ?? []} empty="Nothing logged yet." />}
       </div>
       {pages > 1 && (
         <div className="flex items-center justify-center gap-3">
