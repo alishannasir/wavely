@@ -71,7 +71,7 @@ Website: `https://wavely.space`. API: `https://api.wavely.space`. They must shar
    - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL=https://api.wavely.space/api/auth/google/callback`
    - `STRIPE_*` when you take payments, `ADMIN_EMAILS`, `BRAND_NAME`
 4. **Settings -> Networking -> Custom Domain**: `api.wavely.space`, port 3000. Railway shows a CNAME target; add it in Cloudflare DNS as a **proxied (orange cloud)** CNAME named `api`.
-5. Health check path: `/api/health`. Keep **one replica** (the Socket.IO Redis adapter is not set up, so a second instance could split websocket rooms).
+5. Health check path: `/api/health`. One replica is plenty for the beta. The API already uses a Redis adapter for Socket.IO, so more replicas can be added later; load-test matching before you rely on that.
 6. Check `https://api.wavely.space/api/health` returns `{"status":"ok","db":"up","redis":"up"}`.
 
 ### C. Cloudflare Pages: the website
@@ -86,7 +86,12 @@ Website: `https://wavely.space`. API: `https://api.wavely.space`. They must shar
 
 ### D. Security and country blocking
 - The country comes from Cloudflare's `CF-IPCountry` header and the real IP from `CF-Connecting-IP`; both are trusted when `TRUST_PROXY=true`. That is only safe if nobody can reach the API without going through Cloudflare. **Railway cannot firewall to Cloudflare's IP ranges**, so remove Railway's generated `*.up.railway.app` public domain from the API service once the custom domain works, and keep Postgres/Redis on the private network only.
-- Even so, anyone who learns the Railway origin could send forged headers. For stronger protection add a shared secret: a Cloudflare Transform Rule adds a header (for example `X-Origin-Secret`) and the API rejects requests without it. This is not built yet.
+- **Origin secret (do this, it closes the gap):** Cloudflare adds a secret header to every request it forwards, and the API refuses requests without it. Set it up in this order, or you lock yourself out:
+  1. Make up a long random value (`openssl rand -hex 32`).
+  2. Cloudflare -> `wavely.space` -> **Rules -> Transform Rules -> Modify Request Header -> Create rule**. Name it "Origin secret". Condition: **Hostname equals** `api.wavely.space`. Action: **Set static** header `X-Origin-Secret` = the value. Deploy the rule.
+  3. Railway -> `wavely` service -> Variables -> `ORIGIN_SECRET` = the same value. Deploy.
+  4. Check: `curl -i https://api.wavely.space/api/auth/guest` still works from the website, and requests sent straight to Railway's address (or without the header) get `403 Forbidden`. `/api/health` stays open for Railway's health check.
+  To rotate: update the Cloudflare rule first, then Railway.
 - Cloudflare: turn on **Bot Fight Mode**, add a rate-limit rule for `/api/auth/*`, and keep LiveKit hostnames DNS-only (grey cloud).
 
 ### E. Other services that need the new addresses
@@ -100,3 +105,34 @@ Website: `https://wavely.space`. API: `https://api.wavely.space`. They must shar
 The login token is kept in an HttpOnly, SameSite=Lax cookie named `ovc_session` (Secure on https), so page scripts cannot read it.
 The website and the API must be on the same site (for example `app.example.com` and `api.example.com`), or SameSite=Lax cookies will not be sent.
 `FRONTEND_URL` must list the exact website origin (it is used for CORS with credentials and the CSRF origin check).
+
+## Production and staging (two branches, two domains)
+
+| | Production | Staging |
+|---|---|---|
+| Git branch | `main` | `staging` |
+| Website | `https://wavely.space` | `https://staging.wavely.space` |
+| API | `https://api.wavely.space` | `https://staging-api.wavely.space` |
+| Railway | environment `production` | environment `staging` (own Postgres + Redis) |
+| Cloudflare Worker | `wavely` | `wavely-staging` |
+
+Use `staging-api` (not `api.staging`): Cloudflare's free certificate only covers one subdomain level. All hosts share `wavely.space`, so the login cookie still works.
+
+**Workflow:** work on feature branches -> merge into `staging` -> test on staging -> merge `staging` into `main` -> production deploys.
+
+### Railway
+1. Project -> **Environments -> New Environment** -> name `staging` (duplicate `production`; it gets its own Postgres and Redis, never share data).
+2. In the `staging` environment, API service -> **Settings -> Source -> Branch** = `staging`. In `production` it stays `main`.
+3. Staging variables differ from production: `FRONTEND_URL=https://staging.wavely.space`, a **different** `JWT_SECRET`, `GOOGLE_CALLBACK_URL=https://staging-api.wavely.space/api/auth/google/callback`, Stripe **test** keys + test webhook secret, `MAIL_TRANSPORT=console` (or a Resend sandbox) so tests never email real people, `ORIGIN_SECRET` its own value.
+4. Custom domain `staging-api.wavely.space` (port 3000) -> proxied CNAME `staging-api` in Cloudflare. Add an Origin-secret transform rule for hostname `staging-api.wavely.space` (see section D).
+
+### Cloudflare (website)
+Workers & Pages -> **Create -> Import a repository** a second time, same repo:
+- Production Worker `wavely`: branch `main`, root `frontend`, build `npm run build`, deploy `npx wrangler deploy`, variables `VITE_API_URL=https://api.wavely.space/api`, `VITE_WS_URL=https://api.wavely.space`.
+- Staging Worker `wavely-staging`: branch `staging`, root `frontend`, build `npm run build`, deploy `npx wrangler deploy --env staging`, variables `VITE_API_URL=https://staging-api.wavely.space/api`, `VITE_WS_URL=https://staging-api.wavely.space`.
+- Disable non-production branch builds on the production Worker so only `main` deploys there. The `staging.wavely.space` custom domain is created by `wrangler.jsonc` on deploy.
+
+### Other services
+- **Google OAuth**: add origin `https://staging.wavely.space` and redirect `https://staging-api.wavely.space/api/auth/google/callback` to the same client (or make a separate client).
+- **Stripe**: test-mode webhook -> `https://staging-api.wavely.space/api/billing/webhook`.
+- Protect staging from public indexing/use: put **Cloudflare Access** (free) in front of `staging.wavely.space`, and keep `main` branch protected on GitHub (merge by PR only).

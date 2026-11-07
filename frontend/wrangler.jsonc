@@ -7,5 +7,16 @@
     "directory": "./dist",
     // Single-page app: unknown paths (/chat, /me, /login ...) serve index.html
     "not_found_handling": "single-page-application"
+  },
+  // Staging: a separate Worker deployed from the "staging" branch with "npx wrangler deploy --env staging"
+  "env": {
+    "staging": {
+      "name": "wavely-staging",
+      "routes": [{ "pattern": "staging.wavely.space", "custom_domain": true }],
+      "assets": {
+        "directory": "./dist",
+        "not_found_handling": "single-page-application"
+      }
+    }
   }
 }
