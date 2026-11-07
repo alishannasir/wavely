@@ -1,6 +1,12 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import seo from './routes.json';
+import guides from './guides.json';
+
+const ROUTES = [
+  ...seo.routes,
+  ...guides.map((g) => ({ path: `/guides/${g.slug}`, title: g.title, description: g.description })),
+];
 
 function setMeta(selector: string, attr: 'name' | 'property', key: string, content: string) {
   let el = document.head.querySelector<HTMLMetaElement>(selector);
@@ -17,7 +23,7 @@ export default function RouteSeo() {
   const { pathname } = useLocation();
   useEffect(() => {
     const path = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
-    const route = seo.routes.find((r) => r.path === path);
+    const route = ROUTES.find((r) => r.path === path);
     const title = route?.title ?? seo.siteName;
     document.title = title;
     if (route) {

@@ -33,6 +33,8 @@ const Faq = lazy(() => import('./pages/content/Faq'));
 const Rules = lazy(() => import('./pages/content/Rules'));
 const Terms = lazy(() => import('./pages/content/Legal').then((m) => ({ default: m.Terms })));
 const Privacy = lazy(() => import('./pages/content/Legal').then((m) => ({ default: m.Privacy })));
+const Guides = lazy(() => import('./pages/content/Guides'));
+const Guide = lazy(() => import('./pages/content/Guide'));
 const RegionBlocked = lazy(() => import('./pages/RegionBlocked'));
 
 /** Old URLs (/home, /start, /call) now live at /chat; keep the query string (?friend=, ?accept=). */
@@ -66,6 +68,8 @@ export default function App() {
           <Route path="/about" element={<About />} />
           <Route path="/why" element={<Why />} />
           <Route path="/faq" element={<Faq />} />
+          <Route path="/guides" element={<Guides />} />
+          <Route path="/guides/:slug" element={<Guide />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<Privacy />} />
