@@ -4,6 +4,7 @@ import PageShell, { Card } from '../components/ui/PageShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import { api } from '../lib/api';
 import { useAuth, User } from '../store/auth';
+import LoadingLogo from '../components/brand/LoadingLogo';
 
 type State = 'working' | 'ok' | 'error';
 
@@ -44,7 +45,7 @@ function EmailLink({ endpoint, title, success }: { endpoint: string; title: stri
     <PageShell center>
       <Card className="text-center">
         <h1 className="mb-3 font-display text-3xl font-semibold text-brand">{title}</h1>
-        {state === 'working' && <p role="status" className="text-muted">One moment…</p>}
+        {state === 'working' && <LoadingLogo size={72} />}
         {state === 'ok' && (
           <div role="status">
             <div className="mb-2 text-4xl" aria-hidden>✅</div>

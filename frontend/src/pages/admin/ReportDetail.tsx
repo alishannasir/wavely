@@ -8,6 +8,7 @@ import Modal from '../../components/ui/Modal';
 import { REASON_LABEL, adminApi, daysUntil, timeAgo } from '../../lib/admin';
 import { inputCls } from '../../lib/ui';
 import { useAuth } from '../../store/auth';
+import { SkeletonDetail } from '../../components/ui/Skeleton';
 
 type Pending = 'DISMISS' | 'SUSPEND' | 'BAN' | 'RESTORE' | 'ESCALATE' | 'RELEASE';
 
@@ -71,7 +72,7 @@ export default function ReportDetail() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  if (isLoading) return <p className="text-muted">Loading…</p>;
+  if (isLoading) return <SkeletonDetail />;
   if (isError || !r) return <p role="alert" className="text-danger">{(loadError as Error)?.message ?? 'Report not found'}</p>;
 
   const left = daysUntil(r.evidenceExpiresAt);
