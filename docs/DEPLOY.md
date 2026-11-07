@@ -48,6 +48,53 @@ Once real delivery is configured, friends, messages and payments require a confi
 - Set `NODE_ENV=production` (the compose file does): it turns off the "any localhost origin" CORS rule.
 - Blocked regions, age assurance and evidence handling: see `docs/MODERATION.md`.
 
+## Alternative: Railway (API, Postgres, Redis) + Cloudflare Pages (website)
+
+Use this instead of sections 1-2 if you do not want to run a server. Example domain: `wavely.space` (bought at GoDaddy).
+Website: `https://wavely.space`. API: `https://api.wavely.space`. They must share the registrable domain, because the login cookie is SameSite=Lax.
+
+### A. Put the domain on Cloudflare
+1. Cloudflare: **Add a site** -> `wavely.space` -> Free plan. Cloudflare shows two nameservers.
+2. GoDaddy: **My Products -> wavely.space -> DNS -> Nameservers -> Change -> I'll use my own nameservers**, paste Cloudflare's two. It can take from minutes to a day.
+3. Cloudflare **SSL/TLS** mode: **Full (strict)**.
+
+### B. Railway: API, Postgres, Redis
+1. New project -> **Deploy from GitHub repo** (`alishannasir/wavely`). Service settings: **Root Directory** `backend`, builder **Dockerfile** (`backend/Dockerfile`). The container applies migrations and seeds plan limits on every start, so no extra step.
+2. Add **PostgreSQL** and **Redis** from the project's *New* menu.
+3. API service **Variables** (use Railway references so the private network is used):
+   - `DATABASE_URL=${{Postgres.DATABASE_URL}}` and `REDIS_URL=${{Redis.REDIS_URL}}` (use the private/internal variants, not the public proxy ones)
+   - `JWT_SECRET` (`openssl rand -hex 32`), `PORT=3000`
+   - `FRONTEND_URL=https://wavely.space` (exact origin: used for CORS, the CSRF origin check and email links)
+   - `TRUST_PROXY=true`, `GEO_STRICT=true` (only after section D is done)
+   - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (LiveKit Cloud)
+   - `MAIL_TRANSPORT=resend`, `RESEND_API_KEY`, `MAIL_FROM="Wavely <no-reply@wavely.space>"` (verify `wavely.space` in Resend first, or mail only reaches your own address)
+   - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALLBACK_URL=https://api.wavely.space/api/auth/google/callback`
+   - `STRIPE_*` when you take payments, `ADMIN_EMAILS`, `BRAND_NAME`
+4. **Settings -> Networking -> Custom Domain**: `api.wavely.space`, port 3000. Railway shows a CNAME target; add it in Cloudflare DNS as a **proxied (orange cloud)** CNAME named `api`.
+5. Health check path: `/api/health`. Keep **one replica** (the Socket.IO Redis adapter is not set up, so a second instance could split websocket rooms).
+6. Check `https://api.wavely.space/api/health` returns `{"status":"ok","db":"up","redis":"up"}`.
+
+### C. Cloudflare Pages: the website
+1. Workers & Pages -> **Create -> Pages -> Connect to Git** -> the repo.
+2. Build settings: **Root directory** `frontend`, **Build command** `npm run build`, **Output directory** `dist`. Single-page-app routing works without extra files.
+3. **Environment variables** (Production), needed at build time:
+   - `VITE_API_URL=https://api.wavely.space/api`
+   - `VITE_WS_URL=https://api.wavely.space`
+   - `NODE_VERSION=20`
+4. **Custom domains**: add `wavely.space` (and `www.wavely.space`, redirecting to the bare domain).
+5. Changing a `VITE_` variable needs a new deploy.
+
+### D. Security and country blocking
+- The country comes from Cloudflare's `CF-IPCountry` header and the real IP from `CF-Connecting-IP`; both are trusted when `TRUST_PROXY=true`. That is only safe if nobody can reach the API without going through Cloudflare. **Railway cannot firewall to Cloudflare's IP ranges**, so remove Railway's generated `*.up.railway.app` public domain from the API service once the custom domain works, and keep Postgres/Redis on the private network only.
+- Even so, anyone who learns the Railway origin could send forged headers. For stronger protection add a shared secret: a Cloudflare Transform Rule adds a header (for example `X-Origin-Secret`) and the API rejects requests without it. This is not built yet.
+- Cloudflare: turn on **Bot Fight Mode**, add a rate-limit rule for `/api/auth/*`, and keep LiveKit hostnames DNS-only (grey cloud).
+
+### E. Other services that need the new addresses
+- **Google Cloud console**: authorised JavaScript origin `https://wavely.space`, redirect URI `https://api.wavely.space/api/auth/google/callback`.
+- **Stripe**: webhook endpoint `https://api.wavely.space/api/billing/webhook`; put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+- **LiveKit Cloud**: nothing to change.
+- **Backups**: check your Railway plan for Postgres backups; otherwise run `deploy/backup.sh` (pg_dump) on a schedule and keep the dumps off Railway.
+
 ## Login cookie
 
 The login token is kept in an HttpOnly, SameSite=Lax cookie named `ovc_session` (Secure on https), so page scripts cannot read it.
