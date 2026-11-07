@@ -7,6 +7,6 @@ import { EntitlementsService } from './entitlements.service';
 @Module({
   controllers: [BillingController, WebhookController],
   providers: [StripeService, EntitlementsService],
-  exports: [EntitlementsService],
+  exports: [EntitlementsService, StripeService],
 })
 export class PaymentsModule {}

@@ -8,12 +8,15 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { AccountService } from '../account/account.service';
+import { DataRightsService } from '../account/data-rights.service';
+import { PaymentsModule } from '../payments/payments.module';
 import { EmailTokensService } from '../account/email-tokens.service';
 import { SessionTokenService } from '../account/session-token.service';
 
 @Module({
   imports: [
     PassportModule,
+    PaymentsModule,
     JwtModule.registerAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -23,7 +26,7 @@ import { SessionTokenService } from '../account/session-token.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, AccountService, EmailTokensService, SessionTokenService],
-  exports: [AuthService, AccountService, SessionTokenService],
+  providers: [AuthService, JwtStrategy, GoogleStrategy, AccountService, DataRightsService, EmailTokensService, SessionTokenService],
+  exports: [AuthService, AccountService, DataRightsService, SessionTokenService],
 })
 export class AuthModule {}
