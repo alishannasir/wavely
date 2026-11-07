@@ -9,6 +9,7 @@ import { inputCls } from '../../lib/ui';
 import { useAuth, User } from '../../store/auth';
 import { useDevices } from '../../store/devices';
 import { useFilters } from '../../store/filters';
+import { SkeletonRows } from '../ui/Skeleton';
 
 export const REPORT_REASONS = [
   { code: 'NUDITY', label: 'Nudity / sexual content' },
@@ -250,7 +251,7 @@ export function BlockedModal({ open, onClose }: { open: boolean; onClose: () => 
   return (
     <Modal open={open} onClose={onClose} labelledBy="blocked-title">
       <h2 id="blocked-title" className="mb-3 font-display text-xl font-semibold text-brand">Blocked people</h2>
-      {isLoading && <p className="text-muted">Loading…</p>}
+      {isLoading && <SkeletonRows rows={3} />}
       {isError && <p role="alert" className="text-danger">{(error as Error).message}</p>}
       {data && data.length === 0 && <p className="text-muted">You have not blocked anyone.</p>}
       <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">

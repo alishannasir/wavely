@@ -8,6 +8,7 @@ import Modal from '../../components/ui/Modal';
 import { REASON_LABEL, adminApi, timeAgo } from '../../lib/admin';
 import { inputCls } from '../../lib/ui';
 import { useAuth } from '../../store/auth';
+import { SkeletonDetail } from '../../components/ui/Skeleton';
 
 type Act = 'SUSPEND' | 'BAN' | 'RESTORE';
 
@@ -35,7 +36,7 @@ export default function UserDetail() {
     onError: (e) => setError((e as Error).message),
   });
 
-  if (isLoading) return <p className="text-muted">Loading…</p>;
+  if (isLoading) return <SkeletonDetail />;
   if (isError || !data) return <p role="alert" className="text-danger">{(loadError as Error)?.message ?? 'User not found'}</p>;
   const { user, reportsReceived, reportsMade, recentReports, bans, audit } = data;
   const isSelf = me?.id === user.id;

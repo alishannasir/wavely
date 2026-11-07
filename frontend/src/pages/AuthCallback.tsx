@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth, User } from '../store/auth';
+import LoadingLogo from '../components/brand/LoadingLogo';
 
 export default function AuthCallback() {
   const navigate = useNavigate();
@@ -31,5 +32,8 @@ export default function AuthCallback() {
       .catch(() => navigate('/login'));
   }, [params, navigate]);
 
-  return <main className="min-h-screen flex items-center justify-center text-zinc-400">Signing you in…</main>;
+  return <main className="min-h-screen flex flex-col items-center justify-center gap-3 text-muted">
+      <LoadingLogo size={96} />
+      <p>Signing you in…</p>
+    </main>;
 }
