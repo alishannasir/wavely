@@ -2,7 +2,8 @@ import { FormEvent, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PageShell, { Card } from '../components/ui/PageShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
-import { api, API_BASE } from '../lib/api';
+import { api } from '../lib/api';
+import { continueWithGoogle } from '../lib/google';
 import { inputCls } from '../lib/ui';
 import { useAuth, User } from '../store/auth';
 
@@ -52,7 +53,7 @@ export default function Login() {
         <div className="my-5 flex items-center gap-3 text-xs text-muted">
           <span className="h-px flex-1 bg-line" /> or <span className="h-px flex-1 bg-line" />
         </div>
-        <ChunkyButton variant="neutral" full onClick={() => window.location.assign(`${API_BASE}/auth/google`)}>
+        <ChunkyButton variant="neutral" full onClick={() => void continueWithGoogle()}>
           Continue with Google
         </ChunkyButton>
         <p className="mt-5 text-center text-sm text-muted">

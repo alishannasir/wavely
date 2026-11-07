@@ -232,9 +232,53 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return this.tokenFor(user);
   }
 
-  async oauthLogin(profile: OAuthProfile, country: string | null) {
+  /**
+   * A signed, short-lived proof of "this browser is guest X". It travels through Google's `state`
+   * parameter, so that signing in with Google can turn the guest into the Google account.
+   */
+  async createGuestMergeState(userId: string): Promise<{ state: string }> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { isGuest: true } });
+    if (!user?.isGuest) throw new BadRequestException('Only guest sessions can be merged');
+    return { state: this.jwt.sign({ sub: userId, purpose: 'guest-merge' }, { expiresIn: '15m' }) };
+  }
+
+  /** Returns the guest's user id if `state` is a valid merge token, otherwise null (never throws). */
+  readGuestMergeState(state: unknown): string | null {
+    if (typeof state !== 'string' || !state) return null;
+    try {
+      const payload = this.jwt.verify<{ sub: string; purpose?: string }>(state);
+      return payload.purpose === 'guest-merge' ? payload.sub : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Sign in (or up) with a provider. If the person was a guest, their guest session becomes the new
+   * account (nothing is lost); if that email already has an account, they simply sign in to it and the
+   * unused guest row is left for the nightly purge.
+   */
+  async oauthLogin(profile: OAuthProfile, country: string | null, guestUserId?: string | null) {
     if (!profile.email) throw new UnauthorizedException('No email returned by provider');
     let user = await this.prisma.user.findUnique({ where: { email: profile.email } });
+    if (!user && guestUserId) {
+      const guest = await this.prisma.user.findUnique({ where: { id: guestUserId } });
+      if (guest?.isGuest && guest.status === 'ACTIVE') {
+        user = await this.prisma.user.update({
+          where: { id: guest.id },
+          data: {
+            email: profile.email,
+            authProvider: profile.provider,
+            isGuest: false,
+            displayName: profile.displayName ?? guest.displayName,
+            avatarUrl: profile.avatarUrl,
+            emailVerifiedAt: new Date(),
+            trialEndsAt: this.trialEnd(),
+            tokenVersion: { increment: 1 },
+          },
+        });
+      }
+    }
     if (!user) {
       // Birthdate is unknown for OAuth signups; onboarding collects it and
       // UsersService enforces the 18+ gate before the profile is complete.

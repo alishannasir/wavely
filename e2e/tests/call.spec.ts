@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { connectedPair, expectRemoteVideo, guestPage, newContext, pressStart, resetRuntime, sql, startAsGuest, waitInCall } from './helpers';
 
 test.beforeEach(async () => {
@@ -75,4 +75,71 @@ test('signed-out visitors cannot open the chat screen', async ({ browser }) => {
   await expect(page).toHaveURL(/localhost:5190\/$/);
   void startAsGuest;
   void waitInCall;
+});
+
+test('the camera stays on between matches: Next does not restart it, and the next call still has video', async ({ browser }) => {
+  const { a, b } = await connectedPair(browser);
+  const cam = (page: typeof a) =>
+    page.locator('video').nth(1).evaluate((v: HTMLVideoElement) => {
+      const t = (v.srcObject as MediaStream).getVideoTracks()[0];
+      return `${t.id}:${t.readyState}`;
+    });
+  const before = await cam(a);
+  expect(before).toMatch(/:live$/);
+
+  await a.keyboard.press('Escape');
+  await a.keyboard.press('Escape');
+  await expect(a.getByText('Looking for someone')).toBeVisible();
+  expect(await cam(a)).toBe(before); // same camera track, never stopped
+
+  // a third person joins: A meets them with the very same camera, and video flows both ways
+  const c = await guestPage(browser);
+  await pressStart(c);
+  await waitInCall(a);
+  await waitInCall(c);
+  await expectRemoteVideo(a);
+  await expectRemoteVideo(c);
+  expect(await cam(a)).toBe(before);
+  void b;
+});
+
+test('muting works with the persistent camera and microphone', async ({ browser }) => {
+  const { a } = await connectedPair(browser);
+  await a.getByRole('button', { name: 'Mute microphone' }).click();
+  await expect(a.getByRole('button', { name: 'Unmute microphone' })).toBeVisible();
+  await a.getByRole('button', { name: 'Turn camera off' }).click();
+  await expect(a.getByRole('button', { name: 'Turn camera on' })).toBeVisible();
+  await a.getByRole('button', { name: 'Turn camera on' }).click();
+  await a.getByRole('button', { name: 'Unmute microphone' }).click();
+  await expect(a.getByRole('button', { name: 'Mute microphone' })).toBeVisible();
+});
+
+test('chat filter: guests cannot send links, swear words are masked, the original is kept as evidence', async ({ browser }) => {
+  const { a, b } = await connectedPair(browser);
+  await a.getByLabel('Chat message').fill('visit https://evil.example/pay now, you fuck');
+  await a.keyboard.press('Enter');
+
+  // the other person only sees the filtered text
+  await expect(b.getByText('visit [link removed] now, you ****')).toBeVisible();
+  await expect(b.getByText('evil.example')).toHaveCount(0);
+  // the sender is told what was hidden, and sees what the other person sees
+  await expect(a.getByText('visit [link removed] now, you ****')).toBeVisible();
+  await expect(a.getByText(/Links and contact details are hidden/)).toBeVisible();
+
+  // moderators still get the original in the report
+  await b.getByRole('button', { name: '⚑ Report' }).click();
+  await b.getByRole('button', { name: 'Harassment' }).click();
+  await expect.poll(async () => (await sql(`select count(*)::int as n from reports`))[0].n).toBeGreaterThan(0);
+  const [r] = await sql(`select "chatLog" from reports order by "createdAt" desc limit 1`);
+  expect(JSON.stringify(r.chatLog)).toContain('https://evil.example/pay');
+});
+
+test('chat filter: repeating the same message more than 3 times is blocked', async ({ browser }) => {
+  const { a, b } = await connectedPair(browser);
+  for (let i = 0; i < 5; i++) {
+    await a.getByLabel('Chat message').fill('buy my stuff now');
+    await a.keyboard.press('Enter');
+  }
+  await expect(a.getByText('Please do not repeat the same message.').first()).toBeVisible();
+  await expect(b.getByText('buy my stuff now')).toHaveCount(3);
 });

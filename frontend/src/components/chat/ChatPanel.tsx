@@ -3,7 +3,7 @@ import { LogoMark } from '../brand/Logo';
 import FlagPill from '../ui/FlagPill';
 
 export type ChatMsg =
-  | { id: number; kind: 'me' | 'peer'; text: string }
+  | { id: number; kind: 'me' | 'peer'; text: string; /** matches the server's acknowledgement of what the other person sees */ cid?: number }
   | { id: number; kind: 'bot'; text?: string; node?: ReactNode; country?: string | null };
 
 const EMOJIS = ['😀', '😂', '😍', '😊', '😉', '😎', '🤔', '😢', '👍', '👋', '🙏', '❤️', '🔥', '🎉', '🙌', '😴'];

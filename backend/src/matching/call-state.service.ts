@@ -150,6 +150,13 @@ export class CallStateService {
     return line;
   }
 
+  /** Counter with an expiry set when it is first used. Returns the new count. */
+  async bump(key: string, ttlSec: number): Promise<number> {
+    const n = await this.redis.incr(key);
+    if (n === 1) await this.redis.expire(key, ttlSec);
+    return n;
+  }
+
   async getChat(sessionId: string): Promise<ChatLine[]> {
     const raw = await this.redis.lrange(`call:chat:${sessionId}`, 0, -1);
     return raw.map((r) => JSON.parse(r) as ChatLine);

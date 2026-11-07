@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { API, apiRegister, clearMail, linkIn, mailTo, newContext, signedIn, sql, uniq } from './helpers';
 
 test.beforeEach(async () => {

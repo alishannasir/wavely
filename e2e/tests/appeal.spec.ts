@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { apiRegister, newContext, signedInPage, sql, uniq } from './helpers';
 
 test('a banned user appeals and a moderator restores the account', async ({ browser, request }) => {

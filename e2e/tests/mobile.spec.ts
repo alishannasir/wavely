@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { guestPage, pressStart, resetRuntime, startAsGuest, newContext, waitInCall } from './helpers';
 
 test.beforeEach(async () => {
