@@ -828,8 +828,8 @@ export default function Chat() {
             </div>
           </div>
 
-          {/* The chat floats over the videos: drag it, make it bigger or smaller, or fold it away. */}
-          <FloatingChat containerRef={stageRef}>
+          {/* The chat is a small bar on the edge of the videos: click to open, drag to move, drag a corner to resize. */}
+          <FloatingChat containerRef={stageRef} messageCount={messages.length}>
             <ChatPanel
               variant="floating"
               messages={messages}
