@@ -28,36 +28,66 @@ export interface ChatLine {
   at: number;
 }
 
+/**
+ * Starts a call only if neither user is already in one. A user counts as in a call when their `call:user` key points at
+ * a socket that still has a `call:sock` entry (a key left behind by a crashed instance does not block anyone).
+ * Returns 1 when the call was recorded, 0 when someone is busy. Runs as one script, so two matches that claim the same
+ * user at the same moment cannot both succeed.
+ */
+const SET_ACTIVE_LUA = `
+local function busy(k)
+  local s = redis.call('GET', k)
+  if not s then return false end
+  return redis.call('EXISTS', 'call:sock:' .. s) == 1
+end
+if busy(KEYS[1]) or busy(KEYS[2]) then return 0 end
+local ttl = tonumber(ARGV[1])
+redis.call('SET', KEYS[3], ARGV[2], 'EX', ttl)
+redis.call('SET', KEYS[4], ARGV[3], 'EX', ttl)
+redis.call('SET', KEYS[5], ARGV[4], 'EX', ttl)
+redis.call('SET', KEYS[1], ARGV[5], 'EX', ttl)
+redis.call('SET', KEYS[2], ARGV[6], 'EX', ttl)
+if ARGV[7] ~= '' then redis.call('ZADD', KEYS[6], tonumber(ARGV[7]), ARGV[8]) end
+return 1
+`;
+
 /** Call state in Redis so it survives restarts and works with several API instances. */
 @Injectable()
 export class CallStateService {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
+  /** Records a call. Returns false (and changes nothing) when either user is already in a call. */
   async setActive(
     sessionId: string,
     a: { userId: string; socketId: string },
     b: { userId: string; socketId: string },
     deadline?: { atMs: number; limitedUserId: string } | null,
-  ): Promise<void> {
-    const m = this.redis.multi();
-    m.set(
+  ): Promise<boolean> {
+    const info = (me: typeof a, peer: typeof a): ActiveCall => ({
+      sessionId,
+      userId: me.userId,
+      peerUserId: peer.userId,
+      peerSocketId: peer.socketId,
+    });
+    const claimed = await this.redis.eval(
+      SET_ACTIVE_LUA,
+      6,
+      `call:user:${a.userId}`,
+      `call:user:${b.userId}`,
       `call:session:${sessionId}`,
-      JSON.stringify({ users: [a.userId, b.userId], sockets: [a.socketId, b.socketId], limitedUserId: deadline?.limitedUserId ?? null }),
-      'EX',
+      `call:sock:${a.socketId}`,
+      `call:sock:${b.socketId}`,
+      DEADLINES_KEY,
       ACTIVE_TTL_SEC,
+      JSON.stringify({ users: [a.userId, b.userId], sockets: [a.socketId, b.socketId], limitedUserId: deadline?.limitedUserId ?? null }),
+      JSON.stringify(info(a, b)),
+      JSON.stringify(info(b, a)),
+      a.socketId,
+      b.socketId,
+      deadline ? String(deadline.atMs) : '',
+      sessionId,
     );
-    if (deadline) m.zadd(DEADLINES_KEY, deadline.atMs, sessionId);
-    for (const [me, peer] of [[a, b], [b, a]]) {
-      const info: ActiveCall = {
-        sessionId,
-        userId: me.userId,
-        peerUserId: peer.userId,
-        peerSocketId: peer.socketId,
-      };
-      m.set(`call:sock:${me.socketId}`, JSON.stringify(info), 'EX', ACTIVE_TTL_SEC);
-      m.set(`call:user:${me.userId}`, me.socketId, 'EX', ACTIVE_TTL_SEC);
-    }
-    await m.exec();
+    return claimed === 1;
   }
 
   async getBySocket(socketId: string): Promise<ActiveCall | null> {

@@ -31,6 +31,17 @@ d('matching (redis)', () => {
     await redis.quit();
   });
 
+  it('one find-match per user at a time: the lock is exclusive and only its holder can release it', async () => {
+    const t1 = await svc.acquireUserLock('u1');
+    expect(t1).not.toBeNull();
+    expect(await svc.acquireUserLock('u1')).toBeNull(); // a second tab at the same instant
+    await svc.releaseUserLock('u1', 'someone-elses-token');
+    expect(await svc.acquireUserLock('u1')).toBeNull(); // still held
+    await svc.releaseUserLock('u1', t1!);
+    expect(await svc.acquireUserLock('u1')).not.toBeNull();
+    expect(await svc.acquireUserLock('u2')).not.toBeNull(); // other users are not affected
+  });
+
   it('queues the first user and matches the second', async () => {
     expect(await svc.findOrQueue(entry('a'))).toBeNull();
     const peer = await svc.findOrQueue(entry('b'));
@@ -155,6 +166,30 @@ d('call state (redis)', () => {
     const [x, y] = await Promise.all([calls.endBySocket('sa'), calls.endBySocket('sb')]);
     expect([x, y].filter(Boolean)).toHaveLength(1);
     expect(await calls.socketInCall('b')).toBeNull();
+  });
+
+  it('starts a call only when neither user is already in one (two matches cannot both claim a user)', async () => {
+    expect(await calls.setActive('s1', { userId: 'a', socketId: 'sa' }, { userId: 'b', socketId: 'sb' })).toBe(true);
+    // c tries to start a call with b at the same time: b is busy, so nothing is written for this attempt.
+    expect(await calls.setActive('s2', { userId: 'c', socketId: 'sc' }, { userId: 'b', socketId: 'sb2' })).toBe(false);
+    expect(await calls.getBySocket('sc')).toBeNull();
+    expect(await calls.socketInCall('c')).toBeNull();
+    expect(await calls.socketInCall('b')).toBe('sb');
+  });
+
+  it('concurrent attempts on the same user: exactly one wins', async () => {
+    const results = await Promise.all(
+      ['x', 'y', 'z', 'w'].map((other, i) =>
+        calls.setActive(`race${i}`, { userId: other, socketId: `s-${other}` }, { userId: 'shared', socketId: `shared-${i}` }),
+      ),
+    );
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it('a key left behind by a crashed instance does not block anyone', async () => {
+    await redis.set('call:user:ghost', 'dead-socket'); // no call:sock entry for it: stale
+    expect(await calls.setActive('s3', { userId: 'ghost', socketId: 'sg' }, { userId: 'd', socketId: 'sd' })).toBe(true);
+    expect(await calls.socketInCall('ghost')).toBe('sg');
   });
 
   it('pending calls are single-use and droppable per caller socket', async () => {

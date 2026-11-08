@@ -2,6 +2,7 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import Redis from 'ioredis';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS } from '../redis/redis.module';
 
@@ -148,6 +149,25 @@ export class MatchingService implements OnModuleInit, OnModuleDestroy {
   /** Lightweight cross-instance lock so periodic jobs run on one instance at a time. */
   async tryLock(name: string, ttlMs: number): Promise<boolean> {
     return (await this.redis.set(`lock:${name}`, '1', 'PX', ttlMs, 'NX')) === 'OK';
+  }
+
+  /**
+   * A short per-user lock, so one user's find-match / accept-call requests (two tabs, double taps) run one at a time.
+   * Returns a token to hand back to releaseUserLock, or null when someone else holds it.
+   */
+  async acquireUserLock(userId: string, ttlMs = 15_000): Promise<string | null> {
+    const token = randomUUID();
+    return (await this.redis.set(`lock:user:${userId}`, token, 'PX', ttlMs, 'NX')) === 'OK' ? token : null;
+  }
+
+  async releaseUserLock(userId: string, token: string): Promise<void> {
+    // Only the holder may release: a lock that expired and was taken by someone else is left alone.
+    await this.redis.eval(
+      "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+      1,
+      `lock:user:${userId}`,
+      token,
+    );
   }
 
   /** Counts a started call against both users' daily match cap (at match time, not when the call ends). */

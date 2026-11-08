@@ -8,7 +8,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Inject, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 import { USER_KICK_CHANNEL } from '../common/user-kick';
@@ -67,6 +67,8 @@ export class MatchingGateway
 {
   @WebSocketServer()
   server!: Server;
+
+  private readonly logger = new Logger(MatchingGateway.name);
 
   private rematchTimer?: NodeJS.Timeout;
   private deadlineTimer?: NodeJS.Timeout;
@@ -263,9 +265,29 @@ export class MatchingGateway
       return;
     }
 
+    // One find-match per user at a time (two tabs, double taps): the newer request is told this tab was replaced.
+    const lock = await this.matching.acquireUserLock(userId);
+    if (!lock) {
+      client.emit('session-replaced');
+      return;
+    }
+    try {
+      await this.findMatchLocked(client, user, check.entitlement.filtersEnabled, payload);
+    } finally {
+      await this.matching.releaseUserLock(userId, lock);
+    }
+  }
+
+  private async findMatchLocked(
+    client: Socket,
+    user: NonNullable<Awaited<ReturnType<PrismaService['user']['findUnique']>>>,
+    filtersEnabled: boolean,
+    payload?: FindMatchPayload,
+  ) {
+    const userId = user.id;
     await this.takeOver(userId, client);
 
-    const filtersAllowed = check.entitlement.filtersEnabled && !user.isGuest;
+    const filtersAllowed = filtersEnabled && !user.isGuest;
     const entry: QueueEntry = {
       userId,
       socketId: client.id,
@@ -283,11 +305,25 @@ export class MatchingGateway
       return;
     }
 
-    await this.startCall(
+    const started = await this.startCall(
       'match-found',
       { userId: peer.userId, socketId: peer.socketId, displayName: peer.displayName, country: peer.country },
       { userId, socketId: client.id, displayName: user.displayName, country: user.country },
     );
+    if (!started) await this.requeueAfterFailedStart(entry, peer);
+  }
+
+  /**
+   * The call could not be set up after both users had been taken out of the queue (a database or LiveKit error, or one of
+   * them got into another call first). Put back whoever is not in a call, so nobody waits on "searching" forever.
+   */
+  private async requeueAfterFailedStart(...entries: QueueEntry[]) {
+    for (const e of entries) {
+      if (await this.callState.socketInCall(e.userId)) continue; // already in a call: not ours to queue
+      if (!(await this.isSocketAlive(e.socketId))) continue;
+      await this.matching.enqueueOnly(e);
+      this.server.to(e.socketId).emit('searching');
+    }
   }
 
   /** Atomic claim, skipping peers whose socket has disappeared since they queued. */
@@ -346,14 +382,28 @@ export class MatchingGateway
         (!!waiting.preferredGender && waitedMs >= RELAX_GENDER_MS && waitedMs < RELAX_GENDER_MS + REMATCH_TICK_MS);
       if (relaxedNow) this.server.to(waiting.socketId).emit('filters-relaxed');
 
-      const peer = await this.matchOrQueue(waiting, true);
-      if (!peer) continue;
-      const me = await this.prisma.user.findUnique({ where: { id: waiting.userId } });
-      await this.startCall(
-        'match-found',
-        { userId: peer.userId, socketId: peer.socketId, displayName: peer.displayName, country: peer.country },
-        { userId: waiting.userId, socketId: waiting.socketId, displayName: me?.displayName ?? null, country: me?.country ?? null },
-      );
+      try {
+        // The waiting user is only a candidate here: check them again, they may have been suspended or used up their time.
+        if (!(await this.peerEligible(waiting))) {
+          await this.matching.removeFromQueue(waiting.userId, waiting.socketId);
+          continue;
+        }
+        if (!(await this.isSocketAlive(waiting.socketId))) {
+          await this.matching.removeFromQueue(waiting.userId, waiting.socketId);
+          continue;
+        }
+        const peer = await this.matchOrQueue(waiting, true);
+        if (!peer) continue;
+        const me = await this.prisma.user.findUnique({ where: { id: waiting.userId } });
+        const started = await this.startCall(
+          'match-found',
+          { userId: peer.userId, socketId: peer.socketId, displayName: peer.displayName, country: peer.country },
+          { userId: waiting.userId, socketId: waiting.socketId, displayName: me?.displayName ?? null, country: me?.country ?? null },
+        );
+        if (!started) await this.requeueAfterFailedStart(waiting, peer);
+      } catch {
+        // One failing entry must not end the whole pass; it is retried on the next tick.
+      }
     }
   }
 
@@ -475,11 +525,15 @@ export class MatchingGateway
     await this.takeOver(callee.id, client);
     await this.matching.removeFromQueue(callee.id);
     await this.matching.removeFromQueue(caller.id);
-    await this.startCall(
+    const started = await this.startCall(
       'call-started',
       { userId: caller.id, socketId: pending.callerSocketId, displayName: caller.displayName, country: caller.country },
       { userId: callee.id, socketId: client.id, displayName: callee.displayName, country: callee.country },
     );
+    if (!started) {
+      client.emit('call-unavailable', { message: 'This call could not be started. Please try again.' });
+      this.server.to(pending.callerSocketId).emit('call-unavailable', { message: 'This call could not be started. Please try again.' });
+    }
   }
 
   @SubscribeMessage('decline-call')
@@ -587,52 +641,73 @@ export class MatchingGateway
   }
 
   /** Shared by random matches and direct friend calls. */
-  private async startCall(event: 'match-found' | 'call-started', a: Participant, b: Participant) {
-    // Free-tier time left decides the call deadline and how long the LiveKit tokens are valid.
-    const users = await this.prisma.user.findMany({ where: { id: { in: [a.userId, b.userId] } } });
-    const left = await Promise.all(
-      [a, b].map(async (p) => {
-        const user = users.find((u) => u.id === p.userId);
-        return { userId: p.userId, remainingMs: user ? await this.entitlements.remainingMs(user) : null };
-      }),
-    );
-    const now = Date.now();
-    const deadline = computeCallDeadline(left[0], left[1], now);
-    const ttl = tokenTtlSeconds(deadline ? deadline.atMs - now : null);
+  /**
+   * Sets a call up and tells both sides. Returns false, with nothing left half-done, when it could not be started: a
+   * database or LiveKit error, or one of the two got into another call first. The caller decides what to do next.
+   */
+  private async startCall(event: 'match-found' | 'call-started', a: Participant, b: Participant): Promise<boolean> {
+    let sessionId: string | undefined;
+    let activated = false;
+    try {
+      // Free-tier time left decides the call deadline and how long the LiveKit tokens are valid.
+      const users = await this.prisma.user.findMany({ where: { id: { in: [a.userId, b.userId] } } });
+      const left = await Promise.all(
+        [a, b].map(async (p) => {
+          const user = users.find((u) => u.id === p.userId);
+          return { userId: p.userId, remainingMs: user ? await this.entitlements.remainingMs(user) : null };
+        }),
+      );
+      const now = Date.now();
+      const deadline = computeCallDeadline(left[0], left[1], now);
+      const ttl = tokenTtlSeconds(deadline ? deadline.atMs - now : null);
 
-    const session = await this.prisma.callSession.create({
-      data: { userAId: a.userId, userBId: b.userId },
-    });
-    const roomName = `room_${session.id}`;
-    await this.prisma.callSession.update({ where: { id: session.id }, data: { roomId: roomName } });
+      const session = await this.prisma.callSession.create({
+        data: { userAId: a.userId, userBId: b.userId },
+      });
+      sessionId = session.id;
+      const roomName = `room_${session.id}`;
+      await this.prisma.callSession.update({ where: { id: session.id }, data: { roomId: roomName } });
 
-    const [tokenA, tokenB] = await Promise.all([
-      this.livekit.createToken(roomName, a.userId, a.displayName, ttl),
-      this.livekit.createToken(roomName, b.userId, b.displayName, ttl),
-    ]);
+      const [tokenA, tokenB] = await Promise.all([
+        this.livekit.createToken(roomName, a.userId, a.displayName, ttl),
+        this.livekit.createToken(roomName, b.userId, b.displayName, ttl),
+      ]);
 
-    await this.callState.setActive(session.id, a, b, deadline);
-    await this.matching.recordPair(a.userId, b.userId);
-    await this.matching.recordMatchStart([a.userId, b.userId]); // counted now, not when the call ends
+      // Atomic: fails when either user is already in a call (two matches claimed the same user at once).
+      activated = await this.callState.setActive(session.id, a, b, deadline);
+      if (!activated) {
+        await this.matching.closeSession(session.id);
+        return false;
+      }
+      await this.matching.recordPair(a.userId, b.userId);
+      await this.matching.recordMatchStart([a.userId, b.userId]); // counted now, not when the call ends
 
-    const url = this.livekit.url;
-    const secondsLeft = (i: number) => (left[i].remainingMs === null ? null : Math.floor(left[i].remainingMs! / 1000));
-    this.server.to(a.socketId).emit(event, {
-      roomName,
-      token: tokenA,
-      url,
-      sessionId: session.id,
-      limitSeconds: secondsLeft(0),
-      peer: { userId: b.userId, displayName: b.displayName, country: b.country },
-    });
-    this.server.to(b.socketId).emit(event, {
-      roomName,
-      token: tokenB,
-      url,
-      sessionId: session.id,
-      limitSeconds: secondsLeft(1),
-      peer: { userId: a.userId, displayName: a.displayName, country: a.country },
-    });
+      const url = this.livekit.url;
+      const secondsLeft = (i: number) => (left[i].remainingMs === null ? null : Math.floor(left[i].remainingMs! / 1000));
+      this.server.to(a.socketId).emit(event, {
+        roomName,
+        token: tokenA,
+        url,
+        sessionId: session.id,
+        limitSeconds: secondsLeft(0),
+        peer: { userId: b.userId, displayName: b.displayName, country: b.country },
+      });
+      this.server.to(b.socketId).emit(event, {
+        roomName,
+        token: tokenB,
+        url,
+        sessionId: session.id,
+        limitSeconds: secondsLeft(1),
+        peer: { userId: a.userId, displayName: a.displayName, country: a.country },
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Could not start ${event} for ${a.userId} and ${b.userId}: ${(err as Error).message}`);
+      // Undo whatever got done, so neither user is left in a call that nobody was told about.
+      if (activated) await this.callState.endBySocket(a.socketId).catch(() => undefined);
+      if (sessionId) await this.matching.closeSession(sessionId).catch(() => undefined);
+      return false;
+    }
   }
 
   private async endActiveCall(client: Socket) {
