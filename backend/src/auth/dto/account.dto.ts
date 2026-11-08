@@ -1,7 +1,8 @@
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
+import { NormalizeEmail } from '../../common/normalize';
 
 export class ForgotPasswordDto {
-  @IsEmail() email!: string;
+  @NormalizeEmail() @IsEmail() @MaxLength(254) email!: string;
 }
 
 export class TokenDto {
@@ -9,15 +10,15 @@ export class TokenDto {
 }
 
 export class ResetPasswordDto extends TokenDto {
-  @IsString() @MinLength(8) @MaxLength(200) password!: string;
+  @IsString() @MinLength(8) @MaxLength(72) password!: string;
 }
 
 export class ChangePasswordDto {
   @IsString() @MaxLength(200) currentPassword!: string;
-  @IsString() @MinLength(8) @MaxLength(200) newPassword!: string;
+  @IsString() @MinLength(8) @MaxLength(72) newPassword!: string;
 }
 
 export class ChangeEmailDto {
   @IsString() @MaxLength(200) password!: string;
-  @IsEmail() newEmail!: string;
+  @NormalizeEmail() @IsEmail() @MaxLength(254) newEmail!: string;
 }

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { isUniqueViolation } from '../common/prisma-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { changeEmailMail, resetPasswordMail, securityNoticeMail, verifyEmailMail } from '../mail/templates';
@@ -117,10 +118,15 @@ export class AccountService {
     const taken = await this.prisma.user.findUnique({ where: { email: t.newEmail } });
     if (taken && taken.id !== t.userId) throw new ConflictException('That email is already in use');
     const before = await this.prisma.user.findUnique({ where: { id: t.userId }, select: { email: true } });
-    await this.prisma.user.update({
-      where: { id: t.userId },
-      data: { email: t.newEmail, emailVerifiedAt: new Date(), tokenVersion: { increment: 1 } },
-    });
+    try {
+      await this.prisma.user.update({
+        where: { id: t.userId },
+        data: { email: t.newEmail, emailVerifiedAt: new Date(), tokenVersion: { increment: 1 } },
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictException('That email is already in use'); // claimed a moment ago by someone else
+      throw err;
+    }
     await this.tokens.revokeAll(t.userId);
     if (before?.email) await this.mail.trySend(securityNoticeMail(before.email, 'your email was changed', `The email on your account is now ${t.newEmail}.`));
     return { ok: true };
