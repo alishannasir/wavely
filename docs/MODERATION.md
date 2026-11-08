@@ -48,6 +48,7 @@ Users must accept the rules (`rulesAcceptedAt`) and have a birthdate with age >=
 
 ## Regions and age assurance
 - Access is limited to an allow-list of countries (`ALLOWED_COUNTRIES`, default in `common/geo/geo.config.ts`). **The UK is blocked by default**: the Online Safety Act expects real age assurance, and a self-declared birthdate does not meet it.
+- To let everyone in, set `ALLOWED_COUNTRIES=ALL`. The countries in `BLOCKED_COUNTRIES` stay blocked (default: `GB`; set `BLOCKED_COUNTRIES=NONE` to block nobody, or a list such as `GB,KP`). Keep the UK blocked until age verification exists. Also read the notes below about other countries' laws.
 - Some US states also have age-verification laws. Country-level blocking cannot see US states; with Cloudflare you can add the "visitor location headers" managed transform and block by `cf-region-code`. Not implemented yet. Get legal advice for which states apply to a random video chat.
 - Age verification (e.g. a facial-age-estimation provider) is an open decision. Until it exists, keep these regions blocked.
 - The country comes from Cloudflare's `CF-IPCountry` header and is only trusted when `TRUST_PROXY=true`, so production must sit behind Cloudflare with the origin locked down.

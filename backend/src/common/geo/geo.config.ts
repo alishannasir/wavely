@@ -11,11 +11,26 @@ export const DEFAULT_ALLOWED_COUNTRIES = [
   ...EU_COUNTRIES,
 ];
 
+const codes = (list: string) => list.split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
+
+/** ALLOWED_COUNTRIES=ALL lets everyone in except the countries in BLOCKED_COUNTRIES. */
+export function allowsAllCountries(): boolean {
+  return (process.env.ALLOWED_COUNTRIES ?? '').trim().toUpperCase() === 'ALL';
+}
+
+/**
+ * Only used with ALLOWED_COUNTRIES=ALL. Defaults to the UK (see the note above). Set BLOCKED_COUNTRIES=NONE to
+ * block nobody, or a comma-separated list such as GB,KP to choose your own.
+ */
+export function getBlockedCountries(): string[] {
+  const env = (process.env.BLOCKED_COUNTRIES ?? '').trim();
+  if (!env) return ['GB'];
+  return env.toUpperCase() === 'NONE' ? [] : codes(env);
+}
+
 export function getAllowedCountries(): string[] {
   const env = process.env.ALLOWED_COUNTRIES;
-  if (env && env.trim().length > 0) {
-    return env.split(',').map((c) => c.trim().toUpperCase()).filter(Boolean);
-  }
+  if (env && env.trim().length > 0 && !allowsAllCountries()) return codes(env);
   return DEFAULT_ALLOWED_COUNTRIES;
 }
 
@@ -32,5 +47,6 @@ export function resolveCountry(headers: Record<string, unknown>): string | null 
 /** Same rule for HTTP and sockets. Unknown country is blocked only when GEO_STRICT=true. */
 export function isCountryAllowed(country: string | null): boolean {
   if (!country) return process.env.GEO_STRICT !== 'true';
+  if (allowsAllCountries()) return !getBlockedCountries().includes(country);
   return getAllowedCountries().includes(country);
 }
