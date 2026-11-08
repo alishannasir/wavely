@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Logo from '../../components/brand/Logo';
 import { adminApi } from '../../lib/admin';
 import { api } from '../../lib/api';
-import { useAuth } from '../../store/auth';
+import { useAuth, useSignedInUser } from '../../store/auth';
 
 export const Badge = ({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'danger' | 'warn' | 'brand' | 'ok' }) => {
   const cls = {
@@ -20,7 +20,7 @@ export const Badge = ({ children, tone = 'muted' }: { children: ReactNode; tone?
 /** Frame for the moderator interface. Only moderators/admins get past this; the API enforces it again. */
 export default function AdminLayout() {
   const navigate = useNavigate();
-  const user = useAuth((s) => s.user);
+  const user = useSignedInUser();
   const allowed = user?.role === 'MODERATOR' || user?.role === 'ADMIN';
   const { data: appealCount } = useQuery({ queryKey: ['admin-appeal-count'], queryFn: () => api<{ open: number }>('/admin/appeals/count'), enabled: allowed, refetchInterval: 30_000 });
   const { data: counts } = useQuery({ queryKey: ['admin-counts'], queryFn: adminApi.counts, enabled: allowed, refetchInterval: 30_000 });

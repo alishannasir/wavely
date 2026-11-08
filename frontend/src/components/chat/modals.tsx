@@ -244,21 +244,33 @@ interface BlockedUser { userId: string; displayName: string | null; country: str
 export function BlockedModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const qc = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({ queryKey: ['blocks'], queryFn: () => api<BlockedUser[]>('/blocks'), enabled: open });
+  const [working, setWorking] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   async function unblock(userId: string) {
-    await api(`/blocks/${userId}`, { method: 'DELETE' });
-    void qc.invalidateQueries({ queryKey: ['blocks'] });
+    if (working) return; // a double click must not send two requests
+    setWorking(true);
+    setActionError(null);
+    try {
+      await api(`/blocks/${userId}`, { method: 'DELETE' });
+      await qc.invalidateQueries({ queryKey: ['blocks'] });
+    } catch (e) {
+      setActionError((e as Error).message || 'Could not unblock. Please try again.');
+    } finally {
+      setWorking(false);
+    }
   }
   return (
     <Modal open={open} onClose={onClose} labelledBy="blocked-title">
       <h2 id="blocked-title" className="mb-3 font-display text-xl font-semibold text-brand">Blocked people</h2>
       {isLoading && <SkeletonRows rows={3} />}
       {isError && <p role="alert" className="text-danger">{(error as Error).message}</p>}
+      {actionError && <p role="alert" className="text-danger">{actionError}</p>}
       {data && data.length === 0 && <p className="text-muted">You have not blocked anyone.</p>}
       <ul className="flex max-h-72 flex-col gap-2 overflow-y-auto">
         {data?.map((b) => (
           <li key={b.userId} className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-3 py-2">
             <span className="font-semibold">{b.displayName ?? 'Someone'} {b.country && <span className="text-xs font-normal text-muted">{flagEmoji(b.country)} {b.country}</span>}</span>
-            <ChunkyButton size="sm" variant="neutral" onClick={() => void unblock(b.userId)}>Unblock</ChunkyButton>
+            <ChunkyButton size="sm" variant="neutral" disabled={working} onClick={() => void unblock(b.userId)}>Unblock</ChunkyButton>
           </li>
         ))}
       </ul>

@@ -18,7 +18,7 @@ import { NsfwScanner, preloadNsfwModel } from '../lib/nsfw';
 import { getSocket } from '../lib/socket';
 import { api } from '../lib/api';
 import { useBillingStatus } from '../lib/billing';
-import { useAuth, User } from '../store/auth';
+import { isSessionExpired, useAuth, User } from '../store/auth';
 import { useDevices } from '../store/devices';
 import { useFilters } from '../store/filters';
 
@@ -130,6 +130,14 @@ export default function Chat() {
   // Bumped whenever the current call ends or a new one starts, so a slow connection attempt for an
   // older match can tell it is stale and stop instead of overwriting the current state.
   const genRef = useRef(0);
+  // False once this screen has been left: late results (a camera that finally opened) must not be kept.
+  const aliveRef = useRef(true);
+  // Timers that send the user elsewhere after a message; cleared when leaving so they cannot fire on another screen.
+  const timersRef = useRef<number[]>([]);
+  const later = useCallback((fn: () => void, ms: number) => {
+    timersRef.current.push(window.setTimeout(fn, ms));
+  }, []);
+  const addingFriendRef = useRef(false);
 
   // ---- camera and microphone ----
   // The camera and microphone are opened ONCE and stay open between matches (they are published into each
@@ -146,6 +154,11 @@ export default function Chat() {
           video: videoDeviceId ? { deviceId: videoDeviceId } : true,
           audio: audioDeviceId ? { deviceId: audioDeviceId } : true,
         });
+        // The user may have left this screen while the permission prompt was open: do not keep the camera on.
+        if (!aliveRef.current) {
+          created.forEach((t) => t.stop());
+          throw new DOMException('Closed', 'AbortError');
+        }
         tracksRef.current = {
           video: created.find((t) => t.kind === 'video') as LocalVideoTrack,
           audio: created.find((t) => t.kind === 'audio') as LocalAudioTrack,
@@ -218,7 +231,9 @@ export default function Chat() {
   }, [friendParam, acceptParam, go]);
 
   useEffect(() => {
-    if (!token) {
+    aliveRef.current = true;
+    if (isSessionExpired(token)) {
+      useAuth.getState().logout(); // drop a saved but expired login
       navigate('/');
       return;
     }
@@ -321,7 +336,7 @@ export default function Chat() {
               : 'Could not connect to the call. Please try again.';
         if (isDirect) {
           addMsg({ kind: 'bot', text });
-          setTimeout(() => navigate('/friends'), 2500);
+          later(() => navigate('/friends'), 2500);
         } else {
           backToIdle(text);
         }
@@ -398,12 +413,12 @@ export default function Chat() {
 
     const onDeclined = () => {
       addMsg({ kind: 'bot', text: 'Your friend declined the call.' });
-      setTimeout(() => navigate('/friends'), 1500);
+      later(() => navigate('/friends'), 1500);
     };
 
     const onUnavailable = (payload: { message?: string }) => {
       addMsg({ kind: 'bot', text: payload?.message ?? 'Call unavailable.' });
-      setTimeout(() => navigate('/friends'), 1500);
+      later(() => navigate('/friends'), 1500);
     };
 
     socket.on('match-found', onMatch);
@@ -445,10 +460,13 @@ export default function Chat() {
       socket.off('call-declined', onDeclined);
       socket.off('call-unavailable', onUnavailable);
       socket.emit('leave');
+      aliveRef.current = false;
+      timersRef.current.forEach((t) => window.clearTimeout(t));
+      timersRef.current = [];
       void disconnectRoom();
       releaseTracks();
     };
-  }, [token, navigate, start, disconnectRoom, isDirect, go, addMsg, startPreview, releaseTracks, stopScanner, loadLivekit, openTracks]);
+  }, [token, navigate, later, start, disconnectRoom, isDirect, go, addMsg, startPreview, releaseTracks, stopScanner, loadLivekit, openTracks]);
 
   // ---- actions ----
   async function toggleMic() {
@@ -508,13 +526,16 @@ export default function Chat() {
 
   async function addFriend() {
     const session = sessionRef.current;
-    if (!session || friendRequested) return;
+    if (!session || friendRequested || addingFriendRef.current) return;
+    addingFriendRef.current = true; // a fast double click must not send two requests
     try {
       await api('/friends/requests', { method: 'POST', body: JSON.stringify({ userId: session.peer.userId }) });
       setFriendRequested(true);
       addMsg({ kind: 'bot', text: 'Friend request sent.' });
     } catch (err) {
       addMsg({ kind: 'bot', text: (err as Error).message });
+    } finally {
+      addingFriendRef.current = false;
     }
   }
 

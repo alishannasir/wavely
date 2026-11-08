@@ -69,3 +69,10 @@ export const useAuth = create<AuthState>()(
     },
   ),
 );
+
+/** The signed-in user, or null when signed out or the login has run out (a saved user can outlive its session). */
+export function useSignedInUser(): User | null {
+  const user = useAuth((s) => s.user);
+  const expiresAt = useAuth((s) => s.sessionExpiresAt);
+  return user && !isSessionExpired(expiresAt) ? user : null;
+}

@@ -1,14 +1,14 @@
 import { FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import PageShell, { Card } from '../components/ui/PageShell';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import { api } from '../lib/api';
 import { inputCls } from '../lib/ui';
-import { useAuth, User } from '../store/auth';
+import { useSignedInUser, useAuth, User } from '../store/auth';
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const user = useAuth((s) => s.user);
+  const user = useSignedInUser();
   const [form, setForm] = useState({
     displayName: user?.displayName ?? '',
     birthdate: '',
@@ -17,6 +17,8 @@ export default function Onboarding() {
   });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  if (!user) return <Navigate to="/" replace />;
 
   async function submit(e: FormEvent) {
     e.preventDefault();

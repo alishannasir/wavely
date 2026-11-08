@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { IncomingCallBanner } from '../lib/IncomingCall';
-import { useAuth } from '../store/auth';
+import { useAuth, useSignedInUser } from '../store/auth';
 import AppShell from '../components/nav/AppShell';
 import VerifyBanner from '../components/VerifyBanner';
 import { Card } from '../components/ui/PageShell';
@@ -40,6 +40,22 @@ function FriendsInner() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const me = useAuth((s) => s.user);
+  const session = useAuth((s) => s.sessionExpiresAt); // a new login means a new socket: listen on it
+  // One action at a time: a double click must not send two requests, and a failure must be shown, not swallowed.
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  async function act(key: string, fn: () => Promise<void>) {
+    if (busyKey) return;
+    setBusyKey(key);
+    setActionError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setActionError((e as Error).message || 'Something went wrong. Please try again.');
+    } finally {
+      setBusyKey(null);
+    }
+  }
   const [chatWith, setChatWith] = useState<Friend | null>(null);
   const [draft, setDraft] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -74,28 +90,31 @@ function FriendsInner() {
       socket.off('new-message', append);
       socket.off('message-sent', append);
     };
-  }, [me?.id, queryClient]);
+  }, [me?.id, queryClient, session]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  async function accept(id: string) {
-    await api(`/friends/requests/${id}/accept`, { method: 'POST' });
-    queryClient.invalidateQueries({ queryKey: ['friends'] });
-    queryClient.invalidateQueries({ queryKey: ['friend-requests'] });
-  }
+  const accept = (id: string) =>
+    act(`accept:${id}`, async () => {
+      await api(`/friends/requests/${id}/accept`, { method: 'POST' });
+      await queryClient.invalidateQueries({ queryKey: ['friends'] });
+      await queryClient.invalidateQueries({ queryKey: ['friend-requests'] });
+    });
 
-  async function decline(id: string) {
-    await api(`/friends/requests/${id}/decline`, { method: 'POST' });
-    queryClient.invalidateQueries({ queryKey: ['friend-requests'] });
-  }
+  const decline = (id: string) =>
+    act(`decline:${id}`, async () => {
+      await api(`/friends/requests/${id}/decline`, { method: 'POST' });
+      await queryClient.invalidateQueries({ queryKey: ['friend-requests'] });
+    });
 
-  async function remove(userId: string) {
-    await api(`/friends/${userId}`, { method: 'DELETE' });
-    queryClient.invalidateQueries({ queryKey: ['friends'] });
-    if (chatWith?.userId === userId) setChatWith(null);
-  }
+  const remove = (userId: string) =>
+    act(`remove:${userId}`, async () => {
+      await api(`/friends/${userId}`, { method: 'DELETE' });
+      await queryClient.invalidateQueries({ queryKey: ['friends'] });
+      if (chatWith?.userId === userId) setChatWith(null);
+    });
 
   function send(e: FormEvent) {
     e.preventDefault();
@@ -110,6 +129,7 @@ function FriendsInner() {
       <div className="mx-auto flex max-w-xl flex-col gap-5">
         <h1 className="hidden font-display text-3xl font-semibold text-brand md:block">Friends</h1>
         <VerifyBanner />
+        {actionError && <p role="alert" className="rounded-2xl bg-white p-3 text-sm text-danger shadow-sm">{actionError}</p>}
 
         {requests && requests.length > 0 && (
           <section className="flex flex-col gap-2" aria-label="Friend requests">
@@ -118,8 +138,8 @@ function FriendsInner() {
               <div key={request.id} className="flex items-center justify-between rounded-2xl bg-white p-3 shadow-sm">
                 <span className="font-semibold">{request.from.displayName ?? 'Someone'}</span>
                 <span className="flex gap-2">
-                  <ChunkyButton size="sm" onClick={() => accept(request.id)}>Accept</ChunkyButton>
-                  <ChunkyButton size="sm" variant="neutral" onClick={() => decline(request.id)}>Decline</ChunkyButton>
+                  <ChunkyButton size="sm" disabled={busyKey !== null} onClick={() => accept(request.id)}>Accept</ChunkyButton>
+                  <ChunkyButton size="sm" variant="neutral" disabled={busyKey !== null} onClick={() => decline(request.id)}>Decline</ChunkyButton>
                 </span>
               </div>
             ))}
@@ -146,7 +166,7 @@ function FriendsInner() {
               <span className="flex gap-2">
                 <ChunkyButton size="sm" variant="neutral" onClick={() => setChatWith(friend)}>Chat</ChunkyButton>
                 <ChunkyButton size="sm" onClick={() => navigate(`/chat?friend=${friend.userId}`)} disabled={!friend.online}>Call</ChunkyButton>
-                <ChunkyButton size="sm" variant="neutral" onClick={() => remove(friend.userId)}>Remove</ChunkyButton>
+                <ChunkyButton size="sm" variant="neutral" disabled={busyKey !== null} onClick={() => remove(friend.userId)}>Remove</ChunkyButton>
               </span>
             </div>
           ))}
@@ -183,7 +203,7 @@ function FriendsInner() {
 }
 
 export default function Friends() {
-  const user = useAuth((s) => s.user);
+  const user = useSignedInUser();
   const isGuest = user?.isGuest;
   if (!user) return <Navigate to="/" replace />;
   if (isGuest) {

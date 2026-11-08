@@ -6,7 +6,7 @@ import ChunkyButton from '../components/ui/ChunkyButton';
 import { BlockedModal, FiltersModal, GenderModal, SettingsModal, genderEmoji } from '../components/chat/modals';
 import { useBillingStatus } from '../lib/billing';
 import { flagEmoji } from '../lib/flag';
-import { useAuth } from '../store/auth';
+import { useAuth, useSignedInUser } from '../store/auth';
 import { useFilters } from '../store/filters';
 
 function Row({ label, value, onClick, to }: { label: string; value?: ReactNode; onClick?: () => void; to?: string }) {
@@ -34,7 +34,7 @@ function Group({ children }: { children: ReactNode }) {
 /** Profile tab: who you are, your plan, preferences, help, log out. */
 export default function Profile() {
   const navigate = useNavigate();
-  const user = useAuth((s) => s.user);
+  const user = useSignedInUser();
   const { data: billing } = useBillingStatus(Boolean(user));
   const filters = useFilters();
   const [showGender, setShowGender] = useState(false);

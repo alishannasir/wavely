@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getSocket } from './socket';
+import { useAuth } from '../store/auth';
 
 export interface IncomingCall {
   callId: string;
@@ -10,6 +11,7 @@ export interface IncomingCall {
 export function useIncomingCall() {
   const navigate = useNavigate();
   const [call, setCall] = useState<IncomingCall | null>(null);
+  const session = useAuth((s) => s.sessionExpiresAt); // a new login means a new socket: listen on it
 
   useEffect(() => {
     const socket = getSocket();
@@ -23,7 +25,7 @@ export function useIncomingCall() {
       socket.off('incoming-call', onIncoming);
       socket.off('call-cancelled', onCancelled);
     };
-  }, []);
+  }, [session]);
 
   const accept = () => {
     if (!call) return;
