@@ -794,7 +794,7 @@ export default function Chat() {
               </div>
             )}
             {inCall && (
-              <div className="absolute bottom-2 left-2 flex gap-2">
+              <div className="absolute left-2 top-2 flex gap-2 md:bottom-2 md:top-auto">
                 <RoundBtn onClick={toggleMic} on={micOn} label={micOn ? 'Mute microphone' : 'Unmute microphone'}>
                   <Icon path={MIC} label="Microphone" />
                 </RoundBtn>
@@ -805,8 +805,8 @@ export default function Chat() {
             )}
           </div>
 
-          {/* Small, see-through controls on top of the videos, in the middle. */}
-          <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center">
+          {/* Small, see-through controls in the middle: at the bottom of your own video on a phone, at the top of the videos on desktop. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center md:bottom-auto md:top-2">
             <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/25 bg-black/25 p-1 backdrop-blur-md">
               {isDirect ? (
                 <GlassBtn tone="danger" onClick={() => void stop()}>End call</GlassBtn>
