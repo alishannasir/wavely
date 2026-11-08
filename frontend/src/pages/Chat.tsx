@@ -10,6 +10,7 @@ import VolumePill from '../components/ui/VolumePill';
 import RulesModal from '../components/RulesModal';
 import ChatPanel, { ChatMsg } from '../components/chat/ChatPanel';
 import FloatingChat from '../components/chat/FloatingChat';
+import { useIsDesktop } from '../lib/useIsDesktop';
 import { BlockSheet, FiltersModal, GenderModal, LimitModal, ReportSheet, SettingsModal, genderEmoji } from '../components/chat/modals';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { OnlineCount } from '../lib/online';
@@ -132,6 +133,7 @@ export default function Chat() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLDivElement>(null);
+  const isDesktop = useIsDesktop();
   const stageRef = useRef<HTMLDivElement>(null); // the video area the floating chat lives in
   const tracksRef = useRef<LocalTracks | null>(null);
   const creatingRef = useRef<Promise<void> | null>(null);
@@ -652,6 +654,8 @@ export default function Chat() {
     ) : null;
   const countryBtn = filters.preferredCountry ? flagEmoji(filters.preferredCountry) : '🌐';
 
+  const chatNote = planNote && (trialDaysLeft > 0 || capped || user.isGuest) ? planNote : null;
+
   return (
     <div className={`flex h-[100dvh] flex-col bg-page ${phase === 'idle' ? '' : 'pb-safe'}`}>
       <div ref={audioRef} className="hidden" />
@@ -679,7 +683,7 @@ export default function Chat() {
 
       <main className="flex min-h-0 w-full flex-1 flex-col px-1 pb-1 md:px-2 md:pb-2">
         {/* Videos: stranger on the left, you on the right (desktop); you become a small picture-in-picture on phones. */}
-        <div ref={stageRef} className="relative grid min-h-0 flex-1 overflow-hidden rounded-2xl bg-stage md:grid-cols-2">
+        <div ref={stageRef} className="relative grid min-h-0 flex-1 grid-rows-2 gap-0.5 overflow-hidden rounded-2xl bg-stage md:grid-cols-2 md:grid-rows-1 md:gap-0">
           <div className="group relative min-h-0 overflow-hidden">
             <video
               ref={remoteVideoRef}
@@ -781,7 +785,7 @@ export default function Chat() {
             )}
           </div>
 
-          <div className="absolute right-2 top-14 z-10 h-36 w-28 overflow-hidden rounded-xl border-2 border-white/70 bg-stage md:relative md:inset-auto md:z-0 md:h-auto md:w-auto md:rounded-none md:border-0">
+          <div className="relative min-h-0 overflow-hidden bg-stage">
             <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full -scale-x-100 object-cover" />
             {previewError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-stage/90 p-4 text-center text-sm text-white">
@@ -828,19 +832,33 @@ export default function Chat() {
             </div>
           </div>
 
-          {/* The chat is a small bar on the edge of the videos: click to open, drag to move, drag a corner to resize. */}
-          <FloatingChat containerRef={stageRef} messageCount={messages.length}>
-            <ChatPanel
-              variant="floating"
-              messages={messages}
-              canSend={inCall}
-              onSend={sendChat}
-              onReport={inCall ? () => setShowReport(true) : undefined}
-              note={planNote && (trialDaysLeft > 0 || capped || user.isGuest) ? planNote : null}
-              className="h-full"
-            />
-          </FloatingChat>
+          {/* Desktop: the chat is a small bar on the edge of the videos (click to open, drag to move, drag a corner to resize). */}
+          {isDesktop && (
+            <FloatingChat containerRef={stageRef} messageCount={messages.length}>
+              <ChatPanel
+                variant="floating"
+                messages={messages}
+                canSend={inCall}
+                onSend={sendChat}
+                onReport={inCall ? () => setShowReport(true) : undefined}
+                note={chatNote}
+                className="h-full"
+              />
+            </FloatingChat>
+          )}
         </div>
+
+        {/* Phone: the chat sits below both videos, solid and always in view, so nothing needs scrolling. */}
+        {!isDesktop && (
+          <ChatPanel
+            messages={messages}
+            canSend={inCall}
+            onSend={sendChat}
+            onReport={inCall ? () => setShowReport(true) : undefined}
+            note={chatNote}
+            className="mt-1 h-[30dvh] shrink-0"
+          />
+        )}
       </main>
 
       <BlockSheet open={showBlock} name={peer?.displayName ?? 'this person'} onClose={() => setShowBlock(false)} onConfirm={() => void blockPeer()} />
