@@ -37,7 +37,7 @@ export class AdminController {
 
   @Post('reports/:id/resolve')
   resolve(@Param('id') id: string, @Req() req: Authed, @Body() dto: ResolveReportDto) {
-    return this.reports.resolve(id, req.user.userId, dto.action);
+    return this.reports.resolve(id, req.user.userId, dto.action, req.user.role);
   }
 
   @Post('reports/:id/escalate')

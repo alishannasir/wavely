@@ -12,6 +12,7 @@ function setup(opts: { byEmail?: any; guest?: any } = {}) {
       update: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 'guest1', isGuest: false, status: 'ACTIVE', tokenVersion: 1, ...data })),
       create: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 'new1', status: 'ACTIVE', tokenVersion: 0, ...data })),
     },
+    emailToken: { deleteMany: jest.fn() },
   };
   const session = { issue: jest.fn((u: any) => ({ access_token: 't', user: u })) };
   return { svc: new AuthService(prisma, jwt, {} as any, session as any, { sendVerificationQuietly: jest.fn() } as any), prisma };
@@ -48,7 +49,7 @@ describe('oauthLogin with a guest session', () => {
     expect(upd.data.trialEndsAt).toBeInstanceOf(Date);
   });
   it('signs in to an existing account for that email and leaves the guest alone', async () => {
-    const existing = { id: 'old1', email: 'new@gmail.com', status: 'ACTIVE', isGuest: false };
+    const existing = { id: 'old1', email: 'new@gmail.com', status: 'ACTIVE', isGuest: false, emailVerifiedAt: new Date() };
     const { svc, prisma } = setup({ byEmail: existing, guest: activeGuest });
     await svc.oauthLogin(profile, 'US', 'guest1');
     expect(prisma.user.update).not.toHaveBeenCalled();
@@ -71,5 +72,30 @@ describe('oauthLogin with a guest session', () => {
   });
   it('banned accounts cannot sign in with Google', async () => {
     await expect(setup({ byEmail: { id: 'b', status: 'BANNED' } }).svc.oauthLogin(profile, null)).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe('oauthLogin with an account that was registered but never verified', () => {
+  const unverified = { id: 'victim', email: 'new@gmail.com', status: 'ACTIVE', passwordHash: 'attackers-hash', emailVerifiedAt: null, tokenVersion: 0 };
+  it('does not let the registrant keep access: password removed, sessions ended, links cancelled', async () => {
+    const { svc, prisma } = setup({ byEmail: unverified });
+    prisma.user.update.mockImplementation(async ({ data }: any) => ({ ...unverified, ...data }));
+    await svc.oauthLogin(profile, 'US');
+    const data = prisma.user.update.mock.calls[0][0].data;
+    expect(data.passwordHash).toBeNull();
+    expect(data.emailVerifiedAt).toBeInstanceOf(Date);
+    expect(data.tokenVersion).toEqual({ increment: 1 });
+    expect(prisma.emailToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'victim', usedAt: null } });
+  });
+  it('does not touch a banned account', async () => {
+    const { svc, prisma } = setup({ byEmail: { ...unverified, status: 'BANNED' } });
+    await expect(svc.oauthLogin(profile, 'US')).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+  it('leaves a verified account untouched', async () => {
+    const { svc, prisma } = setup({ byEmail: { ...unverified, emailVerifiedAt: new Date() } });
+    await svc.oauthLogin(profile, 'US');
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.emailToken.deleteMany).not.toHaveBeenCalled();
   });
 });

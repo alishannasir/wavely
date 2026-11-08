@@ -69,7 +69,13 @@ export class MailService {
         return;
       }
       default:
-        this.log.log(`[mail:console] to=${msg.to} subject="${msg.subject}"\n${msg.text}`);
+        // The text holds working verification / reset links. In production they must not end up in the logs, unless
+        // someone opted in on purpose (for example a staging site that has no mail provider).
+        if (process.env.NODE_ENV === 'production' && process.env.MAIL_CONSOLE_LOG_BODY !== 'true') {
+          this.log.warn(`[mail:console] to=${msg.to} subject="${msg.subject}" (body hidden; set MAIL_CONSOLE_LOG_BODY=true to print it, or configure MAIL_TRANSPORT)`);
+        } else {
+          this.log.log(`[mail:console] to=${msg.to} subject="${msg.subject}"\n${msg.text}`);
+        }
     }
   }
 

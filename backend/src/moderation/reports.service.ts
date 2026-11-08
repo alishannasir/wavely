@@ -14,6 +14,7 @@ import { BansService } from './bans.service';
 import { AuditService } from './audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS } from '../redis/redis.module';
+import { kickUser } from '../common/user-kick';
 import { CreateReportDto } from './dto/create-report.dto';
 
 const REPORTS_PER_HOUR = 10;
@@ -224,10 +225,11 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     });
     const distinct = new Set(reports.map((r) => r.reporterId)).size;
     if (distinct >= threshold) {
-      await this.prisma.user.updateMany({
+      const suspended = await this.prisma.user.updateMany({
         where: { id: reportedUserId, status: 'ACTIVE' },
         data: { status: 'SUSPENDED' },
       });
+      if (suspended.count > 0) await kickUser(this.redis, reportedUserId);
     }
   }
 
@@ -303,11 +305,17 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
     reportId: string,
     moderatorId: string,
     action: 'DISMISS' | 'SUSPEND' | 'BAN' | 'RESTORE',
+    actorRole: string = 'MODERATOR',
   ) {
     const report = await this.prisma.report.findUnique({ where: { id: reportId } });
     if (!report) throw new NotFoundException('Report not found');
     if (report.reportedUserId === moderatorId) {
       throw new ForbiddenException('Cannot moderate reports about yourself');
+    }
+    // Same rule as the user screen: only an administrator may act on an administrator.
+    if (action !== 'DISMISS' && actorRole !== 'ADMIN') {
+      const reported = await this.prisma.user.findUnique({ where: { id: report.reportedUserId }, select: { role: true } });
+      if (reported?.role === 'ADMIN') throw new ForbiddenException('Only an administrator can act on an administrator');
     }
 
     const userStatus =
@@ -352,6 +360,7 @@ export class ReportsService implements OnModuleInit, OnModuleDestroy {
         data: userStatus ? { status: userStatus, flaggedUntil: null } : { flaggedUntil: null },
       }),
     ]);
+    if (action === 'SUSPEND' || action === 'BAN') await kickUser(this.redis, report.reportedUserId);
     await this.audit.log(moderatorId, 'REPORT_RESOLVED', {
       targetUserId: report.reportedUserId,
       reportId,

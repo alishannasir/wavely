@@ -5,7 +5,8 @@ function setup(user: any = { id: 'u', status: 'ACTIVE', role: 'USER', isGuest: f
   const prisma: any = { user: { findUnique: jest.fn().mockResolvedValue(user), update: jest.fn(), findMany: jest.fn().mockResolvedValue([]) } };
   const bans = { banUserFootprint: jest.fn(), liftUserFootprint: jest.fn() };
   const audit = { log: jest.fn(), list: jest.fn() };
-  return { svc: new UsersAdminService(prisma, bans as any, audit as any), prisma, bans, audit };
+  const redis = { publish: jest.fn().mockResolvedValue(1) };
+  return { svc: new UsersAdminService(prisma, bans as any, audit as any, redis as any), prisma, bans, audit, redis };
 }
 const mod = { userId: 'mod', role: 'MODERATOR' };
 
@@ -16,6 +17,14 @@ describe('UsersAdminService', () => {
     expect(prisma.user.update.mock.calls[0][0].data.status).toBe('BANNED');
     expect(bans.banUserFootprint).toHaveBeenCalledWith('u', 'mod', 'abuse');
     expect(audit.log).toHaveBeenCalledWith('mod', 'USER_STATUS', { targetUserId: 'u', meta: { from: 'ACTIVE', to: 'BANNED', note: 'abuse' } });
+  });
+  it('suspending or banning also drops the user\'s live sockets; restoring does not', async () => {
+    const a = setup();
+    await a.svc.setStatus(mod, 'u', 'SUSPEND');
+    expect(a.redis.publish).toHaveBeenCalledWith('wavely:user-kick', 'u');
+    const b = setup({ id: 'u', status: 'BANNED', role: 'USER' });
+    await b.svc.setStatus(mod, 'u', 'RESTORE');
+    expect(b.redis.publish).not.toHaveBeenCalled();
   });
   it('restore lifts the footprint', async () => {
     const { svc, bans } = setup({ id: 'u', status: 'BANNED', role: 'USER' });

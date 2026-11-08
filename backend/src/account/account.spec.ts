@@ -34,6 +34,11 @@ describe('EmailTokensService', () => {
     expect(TOKEN_TTL_MS.VERIFY_EMAIL).toBe(24 * 3600_000);
     expect(prisma.emailToken.deleteMany.mock.calls[0][0].where).toEqual({ userId: 'u', type: 'RESET_PASSWORD', usedAt: null }); // older unused links die
   });
+  it('revokeAll cancels every unused link of the user, whatever its type', async () => {
+    const { svc, prisma } = tokens();
+    await svc.revokeAll('u');
+    expect(prisma.emailToken.deleteMany).toHaveBeenCalledWith({ where: { userId: 'u', usedAt: null } });
+  });
   it('a link works once: consume claims it with a single conditional update', async () => {
     const { svc, prisma } = tokens();
     expect(await svc.consume('VERIFY_EMAIL', 'secret')).not.toBeNull();
@@ -55,7 +60,7 @@ function account(user: any = { id: 'u', email: 'a@b.co', displayName: 'Al', pass
   const prisma: any = {
     user: { findUnique: jest.fn().mockResolvedValue(user), update: jest.fn().mockImplementation(async ({ data }) => ({ ...user, ...data })), updateMany: jest.fn() },
   };
-  const tk = { issue: jest.fn().mockResolvedValue('RAWTOKEN'), consume: jest.fn(), checkSendLimit: jest.fn() };
+  const tk = { issue: jest.fn().mockResolvedValue('RAWTOKEN'), consume: jest.fn(), checkSendLimit: jest.fn(), revokeAll: jest.fn() };
   const mail = { send: jest.fn(), trySend: jest.fn() };
   const session = { issue: jest.fn().mockReturnValue({ access_token: 'new' }) };
   return { svc: new AccountService(prisma, tk as any, mail as any, session as any), prisma, tk, mail, session };
@@ -95,6 +100,7 @@ describe('AccountService', () => {
     const data = prisma.user.update.mock.calls[0][0].data;
     expect(await bcrypt.compare('brandnewpass', data.passwordHash)).toBe(true);
     expect(data.tokenVersion).toEqual({ increment: 1 });
+    expect(tk.revokeAll).toHaveBeenCalledWith('u'); // an email-change link requested earlier must die with the old password
     expect(mail.trySend).toHaveBeenCalled();
     tk.consume.mockResolvedValue(null);
     await expect(svc.resetPassword('x', 'brandnewpass')).rejects.toBeInstanceOf(BadRequestException);

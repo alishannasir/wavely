@@ -50,6 +50,7 @@ describe('ReportsService.create', () => {
   it('suspends at the threshold of distinct aged reporters', async () => {
     const { svc, prisma } = setup();
     prisma.report.findMany.mockResolvedValue(['1', '2', '3', '4', '5'].map((r) => ({ reporterId: r })));
+    prisma.user.updateMany.mockResolvedValue({ count: 1 });
     await svc.create('a', dto);
     expect(prisma.user.updateMany).toHaveBeenCalled();
   });

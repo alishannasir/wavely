@@ -295,6 +295,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       });
     }
     if (user.status !== 'ACTIVE') throw new ForbiddenException('Account is suspended or banned');
+    if (!user.emailVerifiedAt) {
+      // Someone registered this address with a password but never confirmed it, and now the real owner has proved
+      // control through the provider. Take the account over safely: the registrant's password no longer works,
+      // their sessions end, and any link they requested is cancelled.
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: null, emailVerifiedAt: new Date(), authProvider: profile.provider, tokenVersion: { increment: 1 } },
+      });
+      await this.prisma.emailToken.deleteMany({ where: { userId: user.id, usedAt: null } });
+    }
     return this.tokenFor(user);
   }
 }

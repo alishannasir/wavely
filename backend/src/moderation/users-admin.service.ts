@@ -1,4 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import Redis from 'ioredis';
+import { REDIS } from '../redis/redis.module';
+import { kickUser } from '../common/user-kick';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from './audit.service';
 import { BansService } from './bans.service';
@@ -24,6 +27,7 @@ export class UsersAdminService {
     private readonly prisma: PrismaService,
     private readonly bans: BansService,
     private readonly audit: AuditService,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
   /** Finds users by id, email, display name, or an IP / device id they were last seen with. */
@@ -84,6 +88,7 @@ export class UsersAdminService {
     if (action === 'BAN') await this.bans.banUserFootprint(userId, actor.userId, note ?? 'manual ban');
     if (action === 'RESTORE') await this.bans.liftUserFootprint(userId);
     await this.prisma.user.update({ where: { id: userId }, data: { status: to, flaggedUntil: null } });
+    if (to !== 'ACTIVE') await kickUser(this.redis, userId); // drop their live chat, call and queue entry now
     await this.audit.log(actor.userId, 'USER_STATUS', { targetUserId: userId, meta: { from: user.status, to, note: note ?? null } });
     return { ok: true, status: to };
   }

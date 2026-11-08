@@ -11,13 +11,14 @@ function setup(report: any = { id: 'r1', reportedUserId: 'u', status: 'OPEN', re
       update: jest.fn().mockResolvedValue({}),
       count: jest.fn().mockResolvedValue(0),
     },
-    user: { update: jest.fn() },
+    user: { update: jest.fn(), findUnique: jest.fn().mockResolvedValue({ role: 'USER' }) },
     $transaction: jest.fn().mockResolvedValue([]),
   };
   const bans = { banUserFootprint: jest.fn(), liftUserFootprint: jest.fn() };
   const audit = { log: jest.fn(), list: jest.fn().mockResolvedValue({ items: [], total: 0 }) };
-  const svc = new ReportsService(prisma, { incr: jest.fn(), expire: jest.fn(), lrange: jest.fn() } as any, bans as any, audit as any);
-  return { svc, prisma, bans, audit };
+  const redis = { incr: jest.fn(), expire: jest.fn(), lrange: jest.fn(), publish: jest.fn().mockResolvedValue(1) };
+  const svc = new ReportsService(prisma, redis as any, bans as any, audit as any);
+  return { svc, prisma, bans, audit, redis };
 }
 
 describe('evidence purge keeps what must be kept', () => {
@@ -43,6 +44,19 @@ describe('resolve', () => {
     expect(days).toBeLessThan(91);
     expect(bans.banUserFootprint).toHaveBeenCalledWith('u', 'mod', 'report r1');
     expect(audit.log).toHaveBeenCalledWith('mod', 'REPORT_RESOLVED', expect.objectContaining({ reportId: 'r1', meta: { action: 'BAN', reportsResolved: 2 } }));
+  });
+  it('a moderator cannot ban, suspend or restore an administrator through a report; an administrator can', async () => {
+    const { svc, prisma } = setup();
+    prisma.user.findUnique.mockResolvedValue({ role: 'ADMIN' });
+    await expect(svc.resolve('r1', 'mod', 'BAN', 'MODERATOR')).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(svc.resolve('r1', 'mod', 'SUSPEND')).rejects.toBeInstanceOf(ForbiddenException); // role defaults to the weakest
+    await expect(svc.resolve('r1', 'boss', 'BAN', 'ADMIN')).resolves.toMatchObject({ ok: true });
+    await expect(svc.resolve('r1', 'mod', 'DISMISS', 'MODERATOR')).resolves.toMatchObject({ ok: true }); // dismissing harms nobody
+  });
+  it('a suspension or ban drops the user\'s live sockets', async () => {
+    const { svc, redis } = setup();
+    await svc.resolve('r1', 'mod', 'SUSPEND', 'MODERATOR');
+    expect(redis.publish).toHaveBeenCalledWith('wavely:user-kick', 'u');
   });
   it('a dismissal does not extend retention', async () => {
     const { svc, prisma } = setup();

@@ -8,7 +8,11 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import Redis from 'ioredis';
+import { REDIS } from '../redis/redis.module';
+import { USER_KICK_CHANNEL } from '../common/user-kick';
+import { isVerificationRequired } from '../account/verification';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
@@ -47,6 +51,7 @@ const MAX_MATCH_ATTEMPTS = 50; // each stale peer is removed from the queue, so 
 const REMATCH_TICK_MS = 5000;
 const DEADLINE_TICK_MS = 5000;
 const PRESENCE_HEARTBEAT_MS = 30_000;
+const UNVERIFIED_MESSAGE = 'Please confirm your email address first (check your inbox, or resend the link in your account settings).';
 const LIMIT_MESSAGE = 'You have used your free chat time for today. Upgrade for unlimited chat.';
 
 const userRoom = (userId: string) => `user:${userId}`;
@@ -66,6 +71,7 @@ export class MatchingGateway
   private rematchTimer?: NodeJS.Timeout;
   private deadlineTimer?: NodeJS.Timeout;
   private presenceTimer?: NodeJS.Timeout;
+  private kickSub?: Redis;
 
   constructor(
     private readonly jwt: JwtService,
@@ -79,9 +85,18 @@ export class MatchingGateway
     private readonly messages: MessagesService,
     private readonly bans: BansService,
     private readonly reports: ReportsService,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
   onModuleInit() {
+    // A moderator suspended or banned someone (possibly on another API instance): drop their sockets. Disconnecting
+    // also ends their call and removes them from the matching queue (see handleDisconnect).
+    this.kickSub = this.redis.duplicate();
+    this.kickSub.on('error', () => undefined);
+    void this.kickSub.subscribe(USER_KICK_CHANNEL).catch(() => undefined);
+    this.kickSub.on('message', (_channel, userId) => {
+      this.server.in(userRoom(userId)).disconnectSockets(true);
+    });
     this.rematchTimer = setInterval(() => void this.rematchTick().catch(() => undefined), REMATCH_TICK_MS);
     this.rematchTimer.unref();
     this.deadlineTimer = setInterval(() => void this.deadlineTick().catch(() => undefined), DEADLINE_TICK_MS);
@@ -100,6 +115,7 @@ export class MatchingGateway
   }
 
   onModuleDestroy() {
+    this.kickSub?.disconnect();
     if (this.rematchTimer) clearInterval(this.rematchTimer);
     if (this.deadlineTimer) clearInterval(this.deadlineTimer);
     if (this.presenceTimer) clearInterval(this.presenceTimer);
@@ -140,7 +156,8 @@ export class MatchingGateway
             throw err; // anything else is a temporary database problem, not a reason to log the user out
           });
         if (!me) return next(new Error('UNAUTHORIZED'));
-        if (me.status === 'BANNED') return next(new Error('BANNED'));
+        // A suspended account is shut out of chat just like a banned one (the appeal page works over plain HTTP).
+        if (me.status === 'BANNED' || me.status === 'SUSPENDED') return next(new Error('BANNED'));
         if (me.tokenVersion !== tokenVersion) return next(new Error('UNAUTHORIZED')); // signed out by a password/email change
 
         socket.data.userId = userId;
@@ -171,6 +188,16 @@ export class MatchingGateway
       await this.dropPendingCallsBy(userId, client.id);
     }
     await this.endActiveCall(client);
+  }
+
+  /**
+   * Friends, messages and payments need a confirmed email (same rule as the REST guard). Read fresh on every
+   * call, so confirming the email takes effect without reconnecting.
+   */
+  private async emailUnverified(userId: string): Promise<boolean> {
+    if (!isVerificationRequired()) return false;
+    const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { emailVerifiedAt: true } });
+    return !u?.emailVerifiedAt;
   }
 
   private async isSocketAlive(socketId: string): Promise<boolean> {
@@ -351,6 +378,10 @@ export class MatchingGateway
       client.emit('call-unavailable', { message: 'Create a free account to call friends.' });
       return;
     }
+    if (await this.emailUnverified(userId)) {
+      client.emit('call-unavailable', { code: 'EMAIL_NOT_VERIFIED', message: UNVERIFIED_MESSAGE });
+      return;
+    }
     const friendUserId = payload?.friendUserId;
     if (!friendUserId || !(await this.friends.areFriends(userId, friendUserId))) {
       client.emit('call-unavailable', { message: 'You can only call friends.' });
@@ -469,6 +500,10 @@ export class MatchingGateway
   ) {
     if (client.data.isGuest) {
       client.emit('message-error', { message: 'Create a free account to send messages.' });
+      return;
+    }
+    if (await this.emailUnverified(client.data.userId as string)) {
+      client.emit('message-error', { code: 'EMAIL_NOT_VERIFIED', message: UNVERIFIED_MESSAGE });
       return;
     }
     try {

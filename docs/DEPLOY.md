@@ -123,7 +123,7 @@ Use `staging-api` (not `api.staging`): Cloudflare's free certificate only covers
 ### Railway
 1. Project -> **Environments -> New Environment** -> name `staging` (duplicate `production`; it gets its own Postgres and Redis, never share data).
 2. In the `staging` environment, API service -> **Settings -> Source -> Branch** = `staging`. In `production` it stays `main`.
-3. Staging variables differ from production: `FRONTEND_URL=https://staging.wavely.space`, a **different** `JWT_SECRET`, `GOOGLE_CALLBACK_URL=https://staging-api.wavely.space/api/auth/google/callback`, Stripe **test** keys + test webhook secret, `MAIL_TRANSPORT=console` (or a Resend sandbox) so tests never email real people, `ORIGIN_SECRET` its own value.
+3. Staging variables differ from production: `FRONTEND_URL=https://staging.wavely.space`, a **different** `JWT_SECRET`, `GOOGLE_CALLBACK_URL=https://staging-api.wavely.space/api/auth/google/callback`, Stripe **test** keys + test webhook secret, `MAIL_TRANSPORT=console` (or a Resend sandbox) so tests never email real people. With `console` in production the email text is hidden from the logs (it holds working verification and reset links), so also set `MAIL_CONSOLE_LOG_BODY=true` on staging if you want to copy the links from the log, `ORIGIN_SECRET` its own value.
 4. Custom domain `staging-api.wavely.space` (port 3000) -> proxied CNAME `staging-api` in Cloudflare. Add an Origin-secret transform rule for hostname `staging-api.wavely.space` (see section D).
 
 ### Cloudflare (website)

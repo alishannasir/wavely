@@ -75,6 +75,7 @@ export class AccountService {
         tokenVersion: { increment: 1 }, // signs the account out everywhere
       },
     });
+    await this.tokens.revokeAll(user.id); // a pending email-change link must not survive a password reset
     // They proved they control the mailbox.
     if (!user.emailVerifiedAt) await this.prisma.user.update({ where: { id: user.id }, data: { emailVerifiedAt: new Date() } });
     if (user.email) await this.mail.trySend(securityNoticeMail(user.email, 'your password was changed', 'Your password was just reset. You were signed out on all devices.'));
@@ -90,6 +91,7 @@ export class AccountService {
       where: { id: userId },
       data: { passwordHash: await bcrypt.hash(next, 10), tokenVersion: { increment: 1 } },
     });
+    await this.tokens.revokeAll(userId);
     if (updated.email) await this.mail.trySend(securityNoticeMail(updated.email, 'your password was changed', 'Your password was just changed. You were signed out on your other devices.'));
     return this.session.issue(updated); // this device stays signed in with a fresh token
   }
@@ -119,6 +121,7 @@ export class AccountService {
       where: { id: t.userId },
       data: { email: t.newEmail, emailVerifiedAt: new Date(), tokenVersion: { increment: 1 } },
     });
+    await this.tokens.revokeAll(t.userId);
     if (before?.email) await this.mail.trySend(securityNoticeMail(before.email, 'your email was changed', `The email on your account is now ${t.newEmail}.`));
     return { ok: true };
   }

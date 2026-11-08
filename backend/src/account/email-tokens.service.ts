@@ -41,6 +41,15 @@ export class EmailTokensService {
   }
 
   /**
+   * Cancels every unused link of this user, whatever its type. Called when the password changes or is reset and
+   * when the email changes, so a link requested earlier (for example by someone who knew the old password)
+   * cannot be used afterwards.
+   */
+  async revokeAll(userId: string): Promise<void> {
+    await this.prisma.emailToken.deleteMany({ where: { userId, usedAt: null } });
+  }
+
+  /**
    * Uses a link exactly once. Returns the token row, or null if it is unknown, expired or already used.
    * The single UPDATE makes concurrent clicks safe: only one of them wins.
    */
