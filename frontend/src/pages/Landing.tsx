@@ -6,6 +6,8 @@ import ChunkyButton from '../components/ui/ChunkyButton';
 import { LogoMark } from '../components/brand/Logo';
 import { useStartChat } from '../components/ui/StartChat';
 import { OnlineCount } from '../lib/online';
+import { useSignedInUser } from '../store/auth';
+import Avatar from '../components/ui/Avatar';
 import { BRAND } from '../brand';
 import seo from '../seo/routes.json';
 
@@ -41,6 +43,9 @@ function PhoneMock() {
 
 export default function Landing() {
   const { start, modal } = useStartChat();
+  const user = useSignedInUser();
+  const account = user && !user.isGuest ? user : null;
+  const firstName = (account?.displayName ?? '').split(' ')[0];
 
   return (
     <div className="min-h-screen bg-page">
@@ -48,19 +53,41 @@ export default function Landing() {
 
       <DoodleBackground tone="brand" className="px-4 py-14 text-center md:py-20">
         <div className="mx-auto max-w-3xl">
-          <h1 className="font-display text-4xl font-semibold leading-tight md:text-6xl">
-            Free random video chat — meet someone new today
-          </h1>
-          <p className="mx-auto mt-4 max-w-xl text-lg text-white/90">{BRAND.description}</p>
+          {account ? (
+            <>
+              <span className="mb-4 inline-flex rounded-full bg-white/15 p-1.5">
+                <Avatar name={account.displayName} src={account.avatarUrl} size={72} />
+              </span>
+              <h1 className="font-display text-4xl font-semibold leading-tight md:text-6xl">
+                Welcome back{firstName ? `, ${firstName}` : ''}!
+              </h1>
+              <p className="mx-auto mt-4 max-w-xl text-lg text-white/90">Ready to meet someone new? Press the button and you are in a chat in seconds.</p>
+            </>
+          ) : (
+            <>
+              <h1 className="font-display text-4xl font-semibold leading-tight md:text-6xl">
+                Free random video chat — meet someone new today
+              </h1>
+              <p className="mx-auto mt-4 max-w-xl text-lg text-white/90">{BRAND.description}</p>
+            </>
+          )}
           <div className="mt-8 flex flex-col items-center gap-4">
             <ChunkyButton size="lg" onClick={start} className="min-w-[16rem]">
               Start chatting now!
             </ChunkyButton>
             <OnlineCount tone="dark" />
-            <p className="text-sm text-white/80">
-              No signup needed.{' '}
-              <Link to="/signup" className="font-semibold underline">Create an account</Link> to add friends and use filters.
-            </p>
+            {account ? (
+              <p className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm font-semibold text-white/90">
+                <Link to="/friends" className="underline">Friends</Link>
+                <Link to="/upgrade" className="underline">Premium</Link>
+                <Link to="/me" className="underline">Your profile</Link>
+              </p>
+            ) : (
+              <p className="text-sm text-white/80">
+                No signup needed.{' '}
+                <Link to="/signup" className="font-semibold underline">Create an account</Link> to add friends and use filters.
+              </p>
+            )}
           </div>
         </div>
       </DoodleBackground>

@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { getSocket } from '../lib/socket';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { useAuth, useSignedInUser } from '../store/auth';
+import Avatar from '../components/ui/Avatar';
 import AppShell from '../components/nav/AppShell';
 import VerifyBanner from '../components/VerifyBanner';
 import { Card } from '../components/ui/PageShell';
@@ -160,6 +161,7 @@ function FriendsInner() {
                   className={`h-2.5 w-2.5 rounded-full ${friend.online ? 'bg-emerald-500' : 'bg-line'}`}
                   title={friend.online ? 'Online' : 'Offline'}
                 />
+                <Avatar name={friend.displayName} src={friend.avatarUrl} size={28} />
                 <span className="font-semibold">{friend.displayName ?? 'Friend'}</span>
                 {friend.country && <FlagPill country={friend.country} />}
               </span>

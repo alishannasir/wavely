@@ -6,6 +6,9 @@ import ChunkyButton from '../components/ui/ChunkyButton';
 import { BlockedModal, FiltersModal, GenderModal, SettingsModal, genderEmoji } from '../components/chat/modals';
 import { useBillingStatus } from '../lib/billing';
 import { flagEmoji } from '../lib/flag';
+import { countryName } from '../lib/countries';
+import Avatar from '../components/ui/Avatar';
+import EditProfileModal from '../components/profile/EditProfileModal';
 import { useAuth, useSignedInUser } from '../store/auth';
 import { useFilters } from '../store/filters';
 
@@ -41,24 +44,23 @@ export default function Profile() {
   const [showFilters, setShowFilters] = useState(false);
   const [showDevices, setShowDevices] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   if (!user) return <Navigate to="/" replace />;
 
   const plan = user.isGuest ? 'Guest' : billing?.plan === 'MONTHLY' || billing?.plan === 'ANNUAL' ? 'Premium' : billing?.plan === 'TRIAL' ? 'Free trial' : 'Free';
-  const initial = (user.displayName ?? '?').slice(0, 1).toUpperCase();
 
   return (
     <AppShell title="Profile">
       <div className="mx-auto flex max-w-lg flex-col gap-4">
         <div className="flex items-center gap-4 rounded-2xl bg-white p-4 shadow-sm">
-          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-brand font-display text-3xl font-semibold text-white" aria-hidden>
-            {initial}
-          </span>
-          <div className="min-w-0">
+          <Avatar name={user.displayName} src={user.avatarUrl} size={64} />
+          <div className="min-w-0 flex-1">
             <p className="truncate font-display text-xl font-semibold">{user.displayName ?? 'You'}</p>
             <p className="truncate text-sm text-muted">{user.email ?? 'Guest session'}</p>
             <span className="mt-1 inline-block rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand">{plan}</span>
           </div>
+          <ChunkyButton size="sm" variant="neutral" onClick={() => setShowEdit(true)}>Edit</ChunkyButton>
         </div>
 
         <VerifyBanner />
@@ -73,7 +75,7 @@ export default function Profile() {
 
         <Group>
           <Row label="I am" value={<span className="text-xl">{genderEmoji(user.gender)}</span>} onClick={() => setShowGender(true)} />
-          <Row label="Country filter" value={filters.preferredCountry ? `${flagEmoji(filters.preferredCountry)} ${filters.preferredCountry}` : 'Anywhere'} onClick={() => setShowFilters(true)} />
+          <Row label="Country filter" value={filters.preferredCountry ? `${flagEmoji(filters.preferredCountry)} ${countryName(filters.preferredCountry)}` : 'Anywhere'} onClick={() => setShowFilters(true)} />
           <Row label="Camera & microphone" onClick={() => setShowDevices(true)} />
           <Row label="Blocked people" onClick={() => setShowBlocked(true)} />
           <Row label="Account & security" to="/account" />
@@ -108,6 +110,7 @@ export default function Profile() {
         </button>
       </div>
 
+      {showEdit && <EditProfileModal open onClose={() => setShowEdit(false)} user={user} />}
       <GenderModal open={showGender} onClose={() => setShowGender(false)} />
       <FiltersModal open={showFilters} onClose={() => setShowFilters(false)} filtersEnabled={Boolean(billing?.filtersEnabled) && !user.isGuest} />
       <BlockedModal open={showBlocked} onClose={() => setShowBlocked(false)} />

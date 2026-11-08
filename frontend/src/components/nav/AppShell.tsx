@@ -3,6 +3,7 @@ import { Link, NavLink } from 'react-router-dom';
 import Logo from '../brand/Logo';
 import BottomNav from './BottomNav';
 import { useAuth } from '../../store/auth';
+import Avatar from '../ui/Avatar';
 
 const LINKS = [
   { to: '/chat', label: 'Chat' },
@@ -34,7 +35,10 @@ export default function AppShell({ title, children }: { title?: string; children
             ))}
           </nav>
           <span className="w-8 md:hidden" aria-hidden />
-          <span className="hidden text-sm text-muted md:block">{user?.displayName}</span>
+          <Link to="/me" className="hidden items-center gap-2 text-sm text-muted hover:text-ink md:flex" aria-label="Your profile">
+            <Avatar name={user?.displayName} src={user?.avatarUrl} size={30} />
+            {user?.displayName}
+          </Link>
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">

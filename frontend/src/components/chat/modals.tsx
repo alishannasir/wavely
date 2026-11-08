@@ -10,6 +10,7 @@ import { useAuth, User } from '../../store/auth';
 import { useDevices } from '../../store/devices';
 import { useFilters } from '../../store/filters';
 import { SkeletonRows } from '../ui/Skeleton';
+import CountryPicker from '../ui/CountryPicker';
 
 export const REPORT_REASONS = [
   { code: 'NUDITY', label: 'Nudity / sexual content' },
@@ -39,8 +40,6 @@ export function ReportSheet({ open, onClose, onPick }: { open: boolean; onClose:
   );
 }
 
-const POPULAR_COUNTRIES = ['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'ES', 'IT', 'NL', 'AE', 'SA', 'QA', 'NZ', 'IE'];
-
 /** Country / looking-for filters. Premium feature: free users see why and how to get it. */
 export function FiltersModal({ open, onClose, filtersEnabled }: { open: boolean; onClose: () => void; filtersEnabled: boolean }) {
   const filters = useFilters();
@@ -50,17 +49,10 @@ export function FiltersModal({ open, onClose, filtersEnabled }: { open: boolean;
       <h2 id="filters-title" className="mb-4 font-display text-xl font-semibold text-brand">Who do you want to meet?</h2>
       {filtersEnabled ? (
         <div className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1 text-sm text-muted">
+          <div className="flex flex-col gap-1 text-sm text-muted">
             Country
-            <select className={inputCls} value={filters.preferredCountry ?? ''} onChange={(e) => filters.setPreferredCountry(e.target.value || null)}>
-              <option value="">🌐 Anywhere</option>
-              {POPULAR_COUNTRIES.map((c) => (
-                <option key={c} value={c}>
-                  {flagEmoji(c)} {c}
-                </option>
-              ))}
-            </select>
-          </label>
+            <CountryPicker value={filters.preferredCountry} onChange={filters.setPreferredCountry} />
+          </div>
           <label className="flex flex-col gap-1 text-sm text-muted">
             Show me
             <select className={inputCls} value={filters.preferredGender ?? ''} onChange={(e) => filters.setPreferredGender(e.target.value || null)}>
