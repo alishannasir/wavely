@@ -6,7 +6,7 @@ import { REDIS } from '../redis/redis.module';
 import { StripeService } from '../payments/stripe.service';
 import { MailService } from '../mail/mail.service';
 import { securityNoticeMail } from '../mail/templates';
-import { sanitizeUser } from './session-token.service';
+import { exportUser } from './session-token.service';
 
 /** Everything a person is entitled to take with them, and the right to be forgotten. */
 @Injectable()
@@ -45,7 +45,7 @@ export class DataRightsService {
     return {
       generatedAt: new Date().toISOString(),
       note: 'This is the data we hold about you. Screenshots and chat logs attached to moderation reports, and the identities of other people, are not included.',
-      profile: sanitizeUser(user),
+      profile: exportUser(user),
       friends: friends.map((f) => ({ with: (f.userAId === userId ? f.userB : f.userA).displayName, status: f.status, since: f.createdAt })),
       messages: messages.map((m) => ({ direction: m.senderId === userId ? 'sent' : 'received', with: (m.senderId === userId ? m.receiver : m.sender).displayName, content: m.content, at: m.createdAt })),
       calls: sessions,

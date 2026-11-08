@@ -13,7 +13,8 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { AccountService } from '../account/account.service';
 import { GoogleAuthGuard } from './google-auth.guard';
-import { clearSessionCookie, setSessionCookie } from './session-cookie';
+import { clearSessionCookie, readSessionCookie, setSessionCookie } from './session-cookie';
+import { clearOauthCookie, readOauthCookie, verifyOauthState } from './oauth-nonce';
 import { ChangeEmailDto, ChangePasswordDto, ForgotPasswordDto, ResetPasswordDto, TokenDto } from './dto/account.dto';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -69,9 +70,11 @@ export class AuthController {
     return withSession(res, await this.auth.login(dto));
   }
 
-  /** Signs out: clears the session cookie. Works with or without a valid session. */
+  /** Signs out: ends this login on the server (the token is refused from now on) and clears the cookie. */
   @Post('logout')
-  logout(@Res({ passthrough: true }) res: Response) {
+  async logout(@Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const bearer = typeof req.headers?.authorization === 'string' ? req.headers.authorization.replace(/^Bearer\s+/i, '') : null;
+    await this.auth.revokeToken(readSessionCookie(req.headers?.cookie) ?? bearer);
     clearSessionCookie(res);
     return { ok: true };
   }
@@ -92,17 +95,25 @@ export class AuthController {
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
   async googleCallback(@Req() req: any, @Res() res: Response) {
-    const guestId = this.auth.readGuestMergeState(req.query?.state);
-    const { user } = await this.auth.oauthLogin(req.user, req.country ?? null, guestId);
-    const code = await this.auth.createLoginCode(user.id);
     const frontend = primaryFrontendUrl();
+    // The sign-in must come back to the browser that started it (see oauth-nonce.ts).
+    const checked = verifyOauthState(req.query?.state, req.headers?.cookie);
+    if (!checked) {
+      clearOauthCookie(res);
+      return res.redirect(`${frontend}/login`);
+    }
+    const guestId = this.auth.readGuestMergeState(checked.guestState);
+    const { user } = await this.auth.oauthLogin(req.user, req.country ?? null, guestId);
+    const code = await this.auth.createLoginCode(user.id, checked.nonce);
     res.redirect(`${frontend}/auth/callback?code=${code}`);
   }
 
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @Post('exchange')
-  async exchange(@Body() dto: ExchangeDto, @Res({ passthrough: true }) res: Response) {
-    return withSession(res, await this.auth.exchangeLoginCode(dto.code));
+  async exchange(@Body() dto: ExchangeDto, @Req() req: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.auth.exchangeLoginCode(dto.code, readOauthCookie(req.headers?.cookie));
+    clearOauthCookie(res);
+    return withSession(res, result);
   }
 
   // ---- email verification, password reset, account changes ----

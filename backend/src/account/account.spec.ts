@@ -163,7 +163,7 @@ describe('verification requirement', () => {
 });
 
 describe('JwtStrategy session revocation', () => {
-  const make = (user: any) => new JwtStrategy({ get: () => 'k'.repeat(40) } as any, { user: { findUnique: jest.fn().mockResolvedValue(user) } } as any);
+  const make = (user: any) => new JwtStrategy({ get: () => 'k'.repeat(40) } as any, { user: { findUnique: jest.fn().mockResolvedValue(user) } } as any, { exists: jest.fn().mockResolvedValue(0) } as any);
   const row = { status: 'ACTIVE', role: 'USER', isGuest: false, emailVerifiedAt: null, tokenVersion: 2 };
   it('accepts a token with the current version and rejects older ones', async () => {
     await expect(make(row).validate({ sub: 'u', email: 'a@b.co', tv: 2 })).resolves.toMatchObject({ userId: 'u' });
@@ -199,7 +199,7 @@ describe('JwtStrategy cookie login', () => {
     const { JwtService } = await import('@nestjs/jwt');
     const secret = 'k'.repeat(40);
     const token = new JwtService({ secret }).sign({ sub: 'u', tv: 0 });
-    const strategy: any = new JwtStrategy({ get: () => secret } as any, { user: { findUnique: jest.fn() } } as any);
+    const strategy: any = new JwtStrategy({ get: () => secret } as any, { user: { findUnique: jest.fn() } } as any, { exists: jest.fn().mockResolvedValue(0) } as any);
     // passport-jwt keeps the extractor on the strategy
     const extract = strategy._jwtFromRequest;
     expect(extract({ headers: { cookie: `ovc_session=${token}` } })).toBe(token);

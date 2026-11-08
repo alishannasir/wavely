@@ -8,20 +8,19 @@ const png = 'data:image/png;base64,' + 'A'.repeat(200);
 const errors = async (body: object) => (await validate(plainToInstance(UpdateProfileDto, body))).map((e) => e.property);
 
 describe('profile photo', () => {
-  it('accepts a small embedded JPEG/PNG/WebP and an https link', () => {
+  it('accepts a small embedded JPEG, PNG or WebP', () => {
     expect(isAvatarValue('data:image/jpeg;base64,/9j/4AAQ==')).toBe(true);
     expect(isAvatarValue(png)).toBe(true);
     expect(isAvatarValue('data:image/webp;base64,UklGRg==')).toBe(true);
-    expect(isAvatarValue('https://example.com/a.png')).toBe(true);
   });
   it('refuses anything that could run or leak: svg, html, javascript:, http, files, oversize', () => {
     expect(isAvatarValue('data:image/svg+xml;base64,PHN2Zz4=')).toBe(false);
     expect(isAvatarValue('data:text/html;base64,PGgxPg==')).toBe(false);
     expect(isAvatarValue('javascript:alert(1)')).toBe(false);
     expect(isAvatarValue('http://example.com/a.png')).toBe(false);
+    expect(isAvatarValue('https://example.com/a.png')).toBe(false); // a link would reveal who views the profile
     expect(isAvatarValue('file:///etc/passwd')).toBe(false);
     expect(isAvatarValue('data:image/png;base64,' + 'A'.repeat(MAX_AVATAR_DATA))).toBe(false);
-    expect(isAvatarValue('https://example.com/' + 'a'.repeat(500))).toBe(false);
     expect(isAvatarValue(42)).toBe(false);
   });
   it('null removes the photo, leaving it out keeps it', async () => {

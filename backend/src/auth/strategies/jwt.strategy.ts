@@ -5,12 +5,17 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { requireJwtSecret } from '../../config/jwt.config';
 import { readSessionCookie } from '../session-cookie';
+import Redis from 'ioredis';
+import { Inject } from '@nestjs/common';
+import { REDIS } from '../../redis/redis.module';
+import { isSessionRevoked } from '../../common/session-revocation';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     config: ConfigService,
     private readonly prisma: PrismaService,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
@@ -21,7 +26,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: { sub: string; email: string; tv?: number }) {
+  async validate(payload: { sub: string; email: string; tv?: number; jti?: string; purpose?: string }) {
+    // The guest-merge state travels through Google's URL: it must never work as a login. A signed-out token is refused too.
+    if (payload.purpose) throw new UnauthorizedException();
+    if (await isSessionRevoked(this.redis, payload.jti)) throw new UnauthorizedException('Your session has ended. Please sign in again.');
     // Re-check status so suspended/banned users lose access before their token expires.
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },

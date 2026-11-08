@@ -12,7 +12,7 @@ export function getSocket(): Socket {
     // The server rejects with `connect_error` (UNAUTHORIZED / BANNED / REGION_BLOCKED / SERVER_ERROR).
     // Socket.IO does not retry those by itself; SERVER_ERROR is a temporary hiccup, so retry it.
     s.on('connect_error', (err) => {
-      if (err.message === 'SERVER_ERROR' && retries < 5) {
+      if ((err.message === 'SERVER_ERROR' || err.message === 'TOO_MANY') && retries < 5) {
         const delay = Math.min(10_000, 1000 * 2 ** retries++);
         setTimeout(() => {
           if (socket === s && !s.connected) s.connect();

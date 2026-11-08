@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 import * as bcrypt from 'bcryptjs';
@@ -24,6 +24,7 @@ import { SessionTokenService, sanitizeUser } from '../account/session-token.serv
 import { AccountService } from '../account/account.service';
 import { normalizeEmail } from '../common/normalize';
 import { isUniqueViolation } from '../common/prisma-errors';
+import { revokeSession } from '../common/session-revocation';
 
 // Compared against when the email is unknown, so a login takes about as long whether or not the account exists.
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
@@ -102,7 +103,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
       },
     });
     return {
-      access_token: this.jwt.sign({ sub: user.id, guest: true }, { expiresIn: GUEST_TOKEN_TTL }),
+      access_token: this.jwt.sign({ sub: user.id, guest: true, jti: randomUUID() }, { expiresIn: GUEST_TOKEN_TTL }),
       user: this.sanitize(user),
     };
   }
@@ -141,6 +142,16 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return this.tokenFor(user);
   }
 
+  /** Ends this login (sign out): the token is refused from now on, even if someone copied it. */
+  async revokeToken(token: string | null): Promise<void> {
+    if (!token) return;
+    try {
+      await revokeSession(this.redis, this.jwt.verify<{ jti?: string; exp?: number }>(token));
+    } catch {
+      /* not a valid token: nothing to revoke */
+    }
+  }
+
   /** Deletes old guests that have no reports involving them or their sessions (nothing to preserve). */
   async purgeStaleGuests(): Promise<number> {
     if (!(await this.redis.set('lock:purge-guests', '1', 'PX', GUEST_PURGE_EVERY_MS - 1000, 'NX'))) return 0;
@@ -166,17 +177,28 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     return stale.length;
   }
 
-  /** Stores the login result under a single-use code (60s) so no JWT ever travels in a URL. */
-  async createLoginCode(userId: string): Promise<string> {
+  /**
+   * Stores the login result under a single-use code (60s) so no JWT ever travels in a URL. The code is bound to the
+   * browser that started the sign-in (its nonce cookie), so a code posted from somewhere else is useless.
+   */
+  async createLoginCode(userId: string, nonce: string): Promise<string> {
     const code = randomBytes(32).toString('hex');
-    await this.redis.set(`auth:code:${code}`, userId, 'EX', 60);
+    await this.redis.set(`auth:code:${code}`, JSON.stringify({ userId, nonce }), 'EX', 60);
     return code;
   }
 
-  async exchangeLoginCode(code: string) {
+  async exchangeLoginCode(code: string, nonce: string | null) {
     // GETDEL makes the code single-use even under concurrent requests.
-    const userId = await this.redis.getdel(`auth:code:${code}`);
-    if (!userId) throw new UnauthorizedException('Invalid or expired code');
+    const raw = await this.redis.getdel(`auth:code:${code}`);
+    let stored: { userId?: string; nonce?: string } | null = null;
+    try {
+      stored = raw ? JSON.parse(raw) : null;
+    } catch {
+      stored = null;
+    }
+    // Wrong browser: the code is already spent (GETDEL), so it cannot be retried by someone else either.
+    if (!stored?.userId || !stored.nonce || !nonce || stored.nonce !== nonce) throw new UnauthorizedException('Invalid or expired code');
+    const userId = stored.userId;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.status !== 'ACTIVE') throw new ForbiddenException('Account is suspended or banned');
     return this.tokenFor(user);

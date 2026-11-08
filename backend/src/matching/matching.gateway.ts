@@ -8,10 +8,12 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { Inject, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { HttpException, Inject, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS } from '../redis/redis.module';
 import { USER_KICK_CHANNEL } from '../common/user-kick';
+import { withinLimit } from '../common/rate-limit';
+import { isSessionRevoked } from '../common/session-revocation';
 import { isVerificationRequired } from '../account/verification';
 import { JwtService } from '@nestjs/jwt';
 import { createHash, randomUUID } from 'crypto';
@@ -30,7 +32,7 @@ import { BansService } from '../moderation/bans.service';
 import { clientIp, sanitizeDeviceId } from '../common/client-info';
 import { filterChatText } from '../common/text-filter';
 import { AuthService } from '../auth/auth.service';
-import { corsOrigin } from '../common/cors';
+import { corsOrigin, isOriginAllowed } from '../common/cors';
 import { readSessionCookie } from '../auth/session-cookie';
 import { originSecretOk } from '../common/origin-secret';
 import { isCountryAllowed, resolveCountry } from '../common/geo/geo.config';
@@ -61,7 +63,12 @@ const userRoom = (userId: string) => `user:${userId}`;
  * All shared state (queue, active calls, pending calls, presence) lives in Redis, and
  * Socket.IO uses the Redis adapter, so several API instances can run side by side.
  */
-@WebSocketGateway({ cors: { origin: corsOrigin, credentials: true } })
+@WebSocketGateway({
+  cors: { origin: corsOrigin, credentials: true },
+  // CORS only covers the polling transport. A websocket handshake has to be checked here, or a page on another
+  // site (even another subdomain) could open a socket with the visitor's cookie. Browsers always send Origin.
+  allowRequest: (req, callback) => callback(null, isOriginAllowed(req.headers.origin)),
+})
 export class MatchingGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit, OnModuleDestroy
 {
@@ -137,7 +144,9 @@ export class MatchingGateway
         let userId: string;
         let tokenVersion = 0;
         try {
-          const payload = this.jwt.verify<{ sub: string; tv?: number }>(token ?? '');
+          const payload = this.jwt.verify<{ sub: string; tv?: number; jti?: string; purpose?: string }>(token ?? '');
+          if (payload.purpose) throw new Error('not a session token'); // e.g. the guest-merge state
+          if (await isSessionRevoked(this.redis, payload.jti)) throw new Error('signed out');
           userId = payload.sub;
           tokenVersion = payload.tv ?? 0;
         } catch {
@@ -145,6 +154,10 @@ export class MatchingGateway
         }
         const ip = clientIp(socket.handshake.headers, socket.handshake.address);
         const deviceId = sanitizeDeviceId(socket.handshake.auth?.deviceId);
+        // Reconnect floods: each handshake costs a database write.
+        const perUser = await withinLimit(this.redis, `rl:conn:user:${userId}`, 60, 60);
+        const perIp = !ip || (await withinLimit(this.redis, `rl:conn:ip:${ip}`, Number(process.env.SOCKET_CONNECT_PER_IP_MIN) || 300, 60));
+        if (!perUser || !perIp) return next(new Error('TOO_MANY'));
         if (await this.bans.isBlocked(ip, deviceId)) return next(new Error('BANNED'));
         if (!isCountryAllowed(resolveCountry(socket.handshake.headers))) return next(new Error('REGION_BLOCKED'));
 
@@ -202,6 +215,11 @@ export class MatchingGateway
     return !u?.emailVerifiedAt;
   }
 
+  /** Per-user limit for one kind of event (the HTTP throttler does not see sockets). */
+  private async tooFast(client: Socket, event: string, limit: number, windowSec = 60): Promise<boolean> {
+    return !(await withinLimit(this.redis, `rl:ev:${client.data.userId}:${event}`, limit, windowSec));
+  }
+
   private async isSocketAlive(socketId: string): Promise<boolean> {
     const sockets = await this.server.in(socketId).fetchSockets();
     return sockets.length > 0;
@@ -240,6 +258,10 @@ export class MatchingGateway
     @MessageBody() payload?: FindMatchPayload,
   ) {
     const userId = client.data.userId as string;
+    if (await this.tooFast(client, 'find-match', 40)) {
+      client.emit('match-error', { message: 'You are going a little fast. Please wait a moment.' });
+      return;
+    }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user || user.status !== 'ACTIVE') {
       client.emit('match-error', { message: 'Your account cannot join matches right now.' });
@@ -424,6 +446,10 @@ export class MatchingGateway
     @MessageBody() payload?: { friendUserId?: string },
   ) {
     const userId = client.data.userId as string;
+    if (await this.tooFast(client, 'call-friend', 10)) {
+      client.emit('call-unavailable', { message: 'You are calling too often. Please wait a moment.' });
+      return;
+    }
     if (client.data.isGuest) {
       client.emit('call-unavailable', { message: 'Create a free account to call friends.' });
       return;
@@ -475,6 +501,7 @@ export class MatchingGateway
     @MessageBody() payload?: { callId?: string },
   ) {
     const callId = payload?.callId ?? '';
+    if (await this.tooFast(client, 'accept-call', 20)) return;
     const peeked = await this.callState.peekPending(callId);
     if (!peeked || peeked.calleeUserId !== client.data.userId) {
       client.emit('call-unavailable', { message: 'This call is no longer available.' });
@@ -539,6 +566,7 @@ export class MatchingGateway
   @SubscribeMessage('decline-call')
   async declineCall(@ConnectedSocket() client: Socket, @MessageBody() payload?: { callId?: string }) {
     const callId = payload?.callId ?? '';
+    if (await this.tooFast(client, 'decline-call', 30)) return;
     const peeked = await this.callState.peekPending(callId);
     if (!peeked || peeked.calleeUserId !== client.data.userId) return;
     const pending = await this.callState.takePending(callId);
@@ -552,6 +580,10 @@ export class MatchingGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() payload?: { toUserId?: string; content?: string },
   ) {
+    if (await this.tooFast(client, 'send-message', 60)) {
+      client.emit('message-error', { message: 'You are sending messages too fast. Please wait a moment.' });
+      return;
+    }
     if (client.data.isGuest) {
       client.emit('message-error', { message: 'Create a free account to send messages.' });
       return;
@@ -569,7 +601,8 @@ export class MatchingGateway
       this.server.to(userRoom(message.receiverId)).emit('new-message', message);
       client.emit('message-sent', message);
     } catch (err) {
-      client.emit('message-error', { message: (err as Error).message });
+      // Only messages meant for people (validation, friendship rules) reach the client; a database error does not.
+      client.emit('message-error', { message: err instanceof HttpException ? err.message : 'Your message could not be sent. Please try again.' });
     }
   }
 

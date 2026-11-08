@@ -1,11 +1,16 @@
 import { ExecutionContext, Injectable } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
+import { startOauth } from './oauth-nonce';
 
-/** Starts Google sign-in and passes our own `state` (the guest-merge token) through to Google and back. */
+/**
+ * Starts Google sign-in. The `state` sent to Google carries a nonce that is also set as a cookie (so the way back can
+ * be tied to this browser), followed by the guest-merge token when a guest is signing in.
+ */
 @Injectable()
 export class GoogleAuthGuard extends AuthGuard('google') {
   getAuthenticateOptions(context: ExecutionContext) {
-    const state = context.switchToHttp().getRequest().query?.state;
-    return typeof state === 'string' && state ? { state } : {};
+    const http = context.switchToHttp();
+    const guestState = http.getRequest().query?.state;
+    return { state: startOauth(http.getResponse(), typeof guestState === 'string' ? guestState : undefined) };
   }
 }

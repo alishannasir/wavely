@@ -30,7 +30,7 @@ describe('AuthService guests', () => {
     expect(data.email).toBeUndefined();
     expect(data.adultAttestedAt).toBeInstanceOf(Date);
     expect(data.trialEndsAt.getTime()).toBeLessThan(Date.now()); // free plan, no filters
-    expect(jwt.sign).toHaveBeenCalledWith({ sub: 'g1', guest: true }, { expiresIn: '4h' });
+    expect(jwt.sign).toHaveBeenCalledWith({ sub: 'g1', guest: true, jti: expect.any(String) }, { expiresIn: '4h' }); // the id lets sign-out revoke it
     expect(res.access_token).toBe('tok');
   });
 
