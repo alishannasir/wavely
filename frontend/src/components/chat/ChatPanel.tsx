@@ -18,10 +18,12 @@ interface Props {
   /** Extra bot bubble after the messages (plan / usage info on the idle screen). */
   note?: ReactNode;
   className?: string;
+  /** `floating` drops the card look (the floating window provides it). */
+  variant?: 'card' | 'floating';
 }
 
 /** Chat bubbles + input. Bot bubbles carry the brand mark, like a support-style conversation. */
-export default function ChatPanel({ messages, canSend, onSend, onReport, note, className = '' }: Props) {
+export default function ChatPanel({ messages, canSend, onSend, onReport, note, className = '', variant = 'card' }: Props) {
   const [draft, setDraft] = useState('');
   const [emojiOpen, setEmojiOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -40,7 +42,7 @@ export default function ChatPanel({ messages, canSend, onSend, onReport, note, c
   }
 
   return (
-    <section aria-label="Chat" className={`relative flex min-h-0 flex-col rounded-2xl bg-white shadow-sm ${className}`}>
+    <section aria-label="Chat" className={`relative flex min-h-0 flex-col ${variant === 'card' ? 'rounded-2xl bg-white shadow-sm' : ''} ${className}`}>
       <div className="flex-1 space-y-2 overflow-y-auto p-3" role="log" aria-live="polite">
         {messages.map((m) =>
           m.kind === 'bot' ? (

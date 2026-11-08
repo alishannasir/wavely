@@ -9,6 +9,7 @@ import StaticNoise from '../components/ui/StaticNoise';
 import VolumePill from '../components/ui/VolumePill';
 import RulesModal from '../components/RulesModal';
 import ChatPanel, { ChatMsg } from '../components/chat/ChatPanel';
+import FloatingChat from '../components/chat/FloatingChat';
 import { BlockSheet, FiltersModal, GenderModal, LimitModal, ReportSheet, SettingsModal, genderEmoji } from '../components/chat/modals';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { OnlineCount } from '../lib/online';
@@ -57,6 +58,19 @@ function Icon({ path, label }: { path: string; label: string }) {
 const MIC = 'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2z';
 const CAM = 'M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z';
 const GEAR = 'M19.4 13a7.7 7.7 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.4 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.7 7.7 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.4-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5L19.4 13zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z';
+
+/** A small see-through button for the strip over the videos. */
+function GlassBtn({ tone = 'neutral', className = '', ...props }: { tone?: 'primary' | 'danger' | 'neutral' } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const colour =
+    tone === 'primary' ? 'bg-brand/80 hover:bg-brand' : tone === 'danger' ? 'bg-red-500/60 hover:bg-red-500/80' : 'bg-white/15 hover:bg-white/30';
+  return (
+    <button
+      type="button"
+      {...props}
+      className={`h-8 whitespace-nowrap rounded-full px-3 text-sm font-semibold text-white transition disabled:opacity-40 ${colour} ${className}`}
+    />
+  );
+}
 
 function RoundBtn({ onClick, on = true, children, label }: { onClick: () => void; on?: boolean; children: ReactNode; label: string }) {
   return (
@@ -118,6 +132,7 @@ export default function Chat() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null); // the video area the floating chat lives in
   const tracksRef = useRef<LocalTracks | null>(null);
   const creatingRef = useRef<Promise<void> | null>(null);
   const lkRef = useRef<typeof import('livekit-client') | null>(null);
@@ -641,7 +656,7 @@ export default function Chat() {
     <div className={`flex h-[100dvh] flex-col bg-page ${phase === 'idle' ? '' : 'pb-safe'}`}>
       <div ref={audioRef} className="hidden" />
 
-      <header className="pt-safe mx-auto flex w-full max-w-[1130px] items-center justify-between px-3 py-2 md:px-4">
+      <header className="pt-safe flex w-full items-center justify-between px-3 py-1.5 md:px-4">
         <Link to="/" aria-label="Home">
           <Logo size={30} />
         </Link>
@@ -662,9 +677,9 @@ export default function Chat() {
         </nav>
       </header>
 
-      <main className="mx-auto flex min-h-0 w-full max-w-[1130px] flex-1 flex-col gap-2 px-2 pb-2 md:px-4 md:pb-4">
+      <main className="flex min-h-0 w-full flex-1 flex-col px-1 pb-1 md:px-2 md:pb-2">
         {/* Videos: stranger on the left, you on the right (desktop); you become a small picture-in-picture on phones. */}
-        <div className="relative grid min-h-0 flex-1 overflow-hidden rounded-2xl bg-stage md:grid-cols-2">
+        <div ref={stageRef} className="relative grid min-h-0 flex-1 overflow-hidden rounded-2xl bg-stage md:grid-cols-2">
           <div className="group relative min-h-0 overflow-hidden">
             <video
               ref={remoteVideoRef}
@@ -766,7 +781,7 @@ export default function Chat() {
             )}
           </div>
 
-          <div className="absolute right-2 top-2 z-10 h-36 w-28 overflow-hidden rounded-xl border-2 border-white/70 bg-stage md:relative md:inset-auto md:z-0 md:h-auto md:w-auto md:rounded-none md:border-0">
+          <div className="absolute right-2 top-14 z-10 h-36 w-28 overflow-hidden rounded-xl border-2 border-white/70 bg-stage md:relative md:inset-auto md:z-0 md:h-auto md:w-auto md:rounded-none md:border-0">
             <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full -scale-x-100 object-cover" />
             {previewError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-stage/90 p-4 text-center text-sm text-white">
@@ -785,48 +800,46 @@ export default function Chat() {
               </div>
             )}
           </div>
-        </div>
 
-        {/* Controls (left) and chat (right), like the reference layout. */}
-        <div className="grid shrink-0 gap-2 md:h-[150px] md:grid-cols-2">
-          <div className="grid grid-cols-4 gap-2 md:gap-3">
-            {isDirect ? (
-              <ChunkyButton variant="danger" onClick={() => void stop()} className="col-span-4 h-16 text-xl md:h-full">
-                End call
-              </ChunkyButton>
-            ) : (
-              <>
-                <ChunkyButton
-                  variant="accent"
-                  onClick={phase === 'idle' ? begin : () => void next()}
-                  disabled={phase === 'connecting'}
-                  className="h-16 flex-col text-lg md:h-full md:text-2xl"
-                >
-                  {phase === 'idle' ? 'Start' : 'Next'}
-                  {phase !== 'idle' && <span className="hidden text-xs font-normal opacity-80 md:block">Esc</span>}
-                </ChunkyButton>
-                <ChunkyButton variant="danger" onClick={() => void stop()} disabled={!busy} className="h-16 text-lg md:h-full md:text-2xl">
-                  Stop
-                </ChunkyButton>
-                <ChunkyButton variant="neutral" onClick={() => setShowFilters(true)} className="h-16 flex-col gap-0 text-base md:h-full md:text-xl">
-                  <span>Country</span>
-                  <span className="text-2xl" aria-hidden>{countryBtn}</span>
-                </ChunkyButton>
-                <ChunkyButton variant="neutral" onClick={() => setShowGender(true)} className="h-16 flex-col gap-0 text-base md:h-full md:text-xl">
-                  <span>I am</span>
-                  <span className="text-2xl" aria-hidden>{genderEmoji(user.gender)}</span>
-                </ChunkyButton>
-              </>
-            )}
+          {/* Small, see-through controls on top of the videos, in the middle. */}
+          <div className="pointer-events-none absolute inset-x-0 top-2 z-30 flex justify-center">
+            <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/25 bg-black/25 p-1 backdrop-blur-md">
+              {isDirect ? (
+                <GlassBtn tone="danger" onClick={() => void stop()}>End call</GlassBtn>
+              ) : (
+                <>
+                  <GlassBtn
+                    tone="primary"
+                    onClick={phase === 'idle' ? begin : () => void next()}
+                    disabled={phase === 'connecting'}
+                    title={phase === 'idle' ? 'Start' : 'Next (Esc)'}
+                  >
+                    {phase === 'idle' ? 'Start' : 'Next'}
+                  </GlassBtn>
+                  <GlassBtn tone="danger" onClick={() => void stop()} disabled={!busy}>Stop</GlassBtn>
+                  <GlassBtn onClick={() => setShowFilters(true)} title="Country" aria-label="Country filter">
+                    <span aria-hidden>{countryBtn}</span> <span className="hidden sm:inline">Country</span>
+                  </GlassBtn>
+                  <GlassBtn onClick={() => setShowGender(true)} title="I am" aria-label="I am">
+                    <span aria-hidden>{genderEmoji(user.gender)}</span> <span className="hidden sm:inline">I am</span>
+                  </GlassBtn>
+                </>
+              )}
+            </div>
           </div>
-          <ChatPanel
-            messages={messages}
-            canSend={inCall}
-            onSend={sendChat}
-            onReport={inCall ? () => setShowReport(true) : undefined}
-            note={planNote && (trialDaysLeft > 0 || capped || user.isGuest) ? planNote : null}
-            className="h-36 md:h-full"
-          />
+
+          {/* The chat floats over the videos: drag it, make it bigger or smaller, or fold it away. */}
+          <FloatingChat containerRef={stageRef}>
+            <ChatPanel
+              variant="floating"
+              messages={messages}
+              canSend={inCall}
+              onSend={sendChat}
+              onReport={inCall ? () => setShowReport(true) : undefined}
+              note={planNote && (trialDaysLeft > 0 || capped || user.isGuest) ? planNote : null}
+              className="h-full"
+            />
+          </FloatingChat>
         </div>
       </main>
 
