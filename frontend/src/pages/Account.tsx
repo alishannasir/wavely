@@ -6,7 +6,7 @@ import Modal from '../components/ui/Modal';
 import VerifyBanner from '../components/VerifyBanner';
 import { api } from '../lib/api';
 import { inputCls } from '../lib/ui';
-import { useAuth, User } from '../store/auth';
+import { useAuth, useSignedInUser, User } from '../store/auth';
 
 function Section({ title, children, tone = 'plain' }: { title: string; children: ReactNode; tone?: 'plain' | 'danger' }) {
   return (
@@ -97,7 +97,7 @@ function ChangeEmail() {
 /** Account and security: email, password, a copy of your data, and deleting the account. */
 export default function Account() {
   const navigate = useNavigate();
-  const user = useAuth((s) => s.user);
+  const user = useSignedInUser();
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [showDelete, setShowDelete] = useState(false);

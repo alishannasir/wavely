@@ -64,13 +64,14 @@ export default function ReportDetail() {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (['INPUT', 'SELECT', 'TEXTAREA'].includes(t.tagName) || document.querySelector('[aria-modal="true"]')) return;
+      if (r?.status === 'RESOLVED') return; // the buttons are disabled for a closed report; so are the shortcuts
       if (e.key === 'd') setPending('DISMISS');
       else if (e.key === 's') setPending('SUSPEND');
       else if (e.key === 'b') setPending('BAN');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [r?.status]);
 
   if (isLoading) return <SkeletonDetail />;
   if (isError || !r) return <p role="alert" className="text-danger">{(loadError as Error)?.message ?? 'Report not found'}</p>;

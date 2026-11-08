@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useBillingStatus } from '../lib/billing';
-import { useAuth } from '../store/auth';
+import { useAuth, useSignedInUser } from '../store/auth';
 import AppShell from '../components/nav/AppShell';
 import VerifyBanner from '../components/VerifyBanner';
 import { Card } from '../components/ui/PageShell';
@@ -96,7 +96,7 @@ function UpgradeInner() {
 }
 
 export default function Upgrade() {
-  const user = useAuth((s) => s.user);
+  const user = useSignedInUser();
   const isGuest = user?.isGuest;
   if (!user) return <Navigate to="/" replace />;
   if (isGuest) {
