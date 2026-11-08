@@ -2,10 +2,11 @@ import { Body, Controller, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsOptional, IsString, MaxLength } from 'class-validator';
 import { SkipBanCheck } from '../moderation/skip-ban.decorator';
+import { NormalizeEmail } from '../common/normalize';
 import { AppealsService } from './appeals.service';
 
 class LookupDto {
-  @IsEmail() email!: string;
+  @NormalizeEmail() @IsEmail() @MaxLength(254) email!: string;
   @IsString() @MaxLength(200) password!: string;
 }
 

@@ -1,9 +1,10 @@
-import { IsDateString, IsIn, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   @MinLength(2)
+  @MaxLength(32)
   displayName?: string;
 
   @IsOptional()
@@ -16,5 +17,6 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsUrl()
+  @MaxLength(500)
   avatarUrl?: string;
 }

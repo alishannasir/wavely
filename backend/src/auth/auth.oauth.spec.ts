@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { AuthService } from './auth.service';
 
@@ -97,5 +97,34 @@ describe('oauthLogin with an account that was registered but never verified', ()
     await svc.oauthLogin(profile, 'US');
     expect(prisma.user.update).not.toHaveBeenCalled();
     expect(prisma.emailToken.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('register and login', () => {
+  const dto: any = { email: 'Bob@X.com', password: 'longenough1', displayName: 'Bob', birthdate: '1990-01-01', gender: 'OTHER' };
+  it('stores the address lower-case and looks it up lower-case', async () => {
+    const { svc, prisma } = setup();
+    prisma.user.create.mockImplementation(async ({ data }: any) => ({ id: 'n', status: 'ACTIVE', tokenVersion: 0, ...data }));
+    await svc.register(dto, null);
+    expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: 'bob@x.com' } });
+    expect(prisma.user.create.mock.calls[0][0].data.email).toBe('bob@x.com');
+  });
+  it('two sign-ups at the same moment: the one that loses the race gets a 409, not a 500', async () => {
+    const { svc, prisma } = setup();
+    prisma.user.create.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
+    await expect(svc.register(dto, null)).rejects.toBeInstanceOf(ConflictException);
+    prisma.user.create.mockRejectedValue(new Error('db down'));
+    await expect(svc.register(dto, null)).rejects.toThrow('db down');
+  });
+  it('an unknown email and a wrong password look the same', async () => {
+    const { svc } = setup();
+    await expect(svc.login({ email: 'nobody@x.com', password: 'whatever12' } as any)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+  it('upgrading a guest ends the old guest token', async () => {
+    const { svc, prisma } = setup({ guest: { id: 'guest1', isGuest: true, status: 'ACTIVE' } });
+    prisma.user.findUnique.mockImplementation(async ({ where }: any) => (where.email ? null : { id: 'guest1', isGuest: true }));
+    await svc.upgradeGuest('guest1', dto);
+    expect(prisma.user.update.mock.calls[0][0].data.tokenVersion).toEqual({ increment: 1 });
+    expect(prisma.user.update.mock.calls[0][0].data.email).toBe('bob@x.com');
   });
 });

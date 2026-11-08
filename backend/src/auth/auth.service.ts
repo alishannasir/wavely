@@ -22,7 +22,11 @@ import { LoginDto } from './dto/login.dto';
 import { UpgradeGuestDto } from './dto/upgrade-guest.dto';
 import { SessionTokenService, sanitizeUser } from '../account/session-token.service';
 import { AccountService } from '../account/account.service';
+import { normalizeEmail } from '../common/normalize';
+import { isUniqueViolation } from '../common/prisma-errors';
 
+// Compared against when the email is unknown, so a login takes about as long whether or not the account exists.
+const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 const TRIAL_DAYS = 3;
 const GUEST_TOKEN_TTL = '4h';
 const GUEST_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -109,22 +113,30 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     if (!current || !current.isGuest) throw new BadRequestException('Only guest accounts can be upgraded');
     const birthdate = new Date(dto.birthdate);
     AuthService.assertAdult(birthdate);
-    if (await this.prisma.user.findUnique({ where: { email: dto.email } })) {
+    const email = normalizeEmail(dto.email) as string;
+    if (await this.prisma.user.findUnique({ where: { email } })) {
       throw new ConflictException('Email already registered');
     }
-    const user = await this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        email: dto.email,
-        passwordHash: await bcrypt.hash(dto.password, 10),
-        authProvider: 'EMAIL',
-        isGuest: false,
-        displayName: dto.displayName,
-        birthdate,
-        gender: dto.gender,
-        trialEndsAt: this.trialEnd(),
-      },
-    });
+    let user: User;
+    try {
+      user = await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          email,
+          passwordHash: await bcrypt.hash(dto.password, 10),
+          authProvider: 'EMAIL',
+          isGuest: false,
+          displayName: dto.displayName,
+          birthdate,
+          gender: dto.gender,
+          trialEndsAt: this.trialEnd(),
+          tokenVersion: { increment: 1 }, // the old guest token must not keep working as the full account
+        },
+      });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new ConflictException('Email already registered');
+      throw err;
+    }
     void this.account.sendVerificationQuietly(user);
     return this.tokenFor(user);
   }
@@ -204,28 +216,39 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     const birthdate = new Date(dto.birthdate);
     AuthService.assertAdult(birthdate);
 
-    const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const email = normalizeEmail(dto.email) as string;
+    const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new ConflictException('Email already registered');
 
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash: await bcrypt.hash(dto.password, 10),
-        authProvider: 'EMAIL',
-        displayName: dto.displayName,
-        birthdate,
-        gender: dto.gender,
-        country,
-        trialEndsAt: this.trialEnd(),
-      },
-    });
+    let user: User;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          passwordHash: await bcrypt.hash(dto.password, 10),
+          authProvider: 'EMAIL',
+          displayName: dto.displayName,
+          birthdate,
+          gender: dto.gender,
+          country,
+          trialEndsAt: this.trialEnd(),
+        },
+      });
+    } catch (err) {
+      // Two sign-ups with the same address at the same moment: the second one lost the race.
+      if (isUniqueViolation(err)) throw new ConflictException('Email already registered');
+      throw err;
+    }
     void this.account.sendVerificationQuietly(user);
     return this.tokenFor(user);
   }
 
   async login(dto: LoginDto) {
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
-    if (!user || !user.passwordHash) throw new UnauthorizedException('Invalid credentials');
+    const user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(dto.email) as string } });
+    if (!user || !user.passwordHash) {
+      await bcrypt.compare(dto.password, DUMMY_HASH); // same work as a real check: timing does not reveal which emails exist
+      throw new UnauthorizedException('Invalid credentials');
+    }
     const ok = await bcrypt.compare(dto.password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
     if (user.status !== 'ACTIVE') throw new ForbiddenException('Account is suspended or banned');
@@ -260,6 +283,7 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
    */
   async oauthLogin(profile: OAuthProfile, country: string | null, guestUserId?: string | null) {
     if (!profile.email) throw new UnauthorizedException('No email returned by provider');
+    profile = { ...profile, email: normalizeEmail(profile.email) as string };
     let user = await this.prisma.user.findUnique({ where: { email: profile.email } });
     if (!user && guestUserId) {
       const guest = await this.prisma.user.findUnique({ where: { id: guestUserId } });

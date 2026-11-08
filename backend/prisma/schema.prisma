@@ -141,6 +141,7 @@ model Subscription {
   currentPeriodEnd     DateTime?
   user                 User               @relation(fields: [userId], references: [id])
 
+  @@index([userId, status])
   @@map("subscriptions")
 }
 
@@ -155,6 +156,9 @@ model CallSession {
   userB     User      @relation("SessionUserB", fields: [userBId], references: [id])
   reports   Report[]
 
+  @@index([userAId])
+  @@index([userBId])
+  @@index([endedAt, startedAt])
   @@map("sessions")
 }
 
@@ -168,6 +172,7 @@ model Friend {
   userB     User         @relation("FriendUserB", fields: [userBId], references: [id])
 
   @@unique([userAId, userBId])
+  @@index([userBId])
   @@map("friends")
 }
 
@@ -180,6 +185,8 @@ model Message {
   sender     User     @relation("MessageSender", fields: [senderId], references: [id])
   receiver   User     @relation("MessageReceiver", fields: [receiverId], references: [id])
 
+  @@index([senderId, receiverId, createdAt])
+  @@index([receiverId, createdAt])
   @@map("messages")
 }
 
@@ -215,6 +222,7 @@ model Report {
   // One report per reporter/target/session (sessionId is required by the API).
   @@unique([reporterId, reportedUserId, sessionId])
   @@index([reportedUserId, status])
+  @@index([evidenceExpiresAt])
   @@map("reports")
 }
 

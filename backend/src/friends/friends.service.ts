@@ -51,25 +51,28 @@ export class FriendsService {
       throw new ForbiddenException('You can only add people you have chatted with');
     }
 
-    const existing = await this.prisma.friend.findFirst({
-      where: {
-        OR: [
-          { userAId: fromId, userBId: toId },
-          { userAId: toId, userBId: fromId },
-        ],
-      },
-    });
-    if (existing?.status === 'ACCEPTED') throw new ConflictException('Already friends');
-    if (existing) {
-      // The other side already asked: accept instead of duplicating.
-      if (existing.userAId === toId) {
-        return this.prisma.friend.update({ where: { id: existing.id }, data: { status: 'ACCEPTED' } });
+    // A asks B while B asks A would otherwise create two pending rows. One lock per pair (released when the transaction
+    // ends) makes the second request see the first and accept it instead.
+    const [low, high] = fromId < toId ? [fromId, toId] : [toId, fromId];
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`friend:${low}:${high}`}))`;
+      const existing = await tx.friend.findFirst({
+        where: {
+          OR: [
+            { userAId: fromId, userBId: toId },
+            { userAId: toId, userBId: fromId },
+          ],
+        },
+      });
+      if (existing?.status === 'ACCEPTED') throw new ConflictException('Already friends');
+      if (existing) {
+        // The other side already asked: accept instead of duplicating.
+        if (existing.userAId === toId) {
+          return tx.friend.update({ where: { id: existing.id }, data: { status: 'ACCEPTED' } });
+        }
+        throw new ConflictException('Request already sent');
       }
-      throw new ConflictException('Request already sent');
-    }
-
-    return this.prisma.friend.create({
-      data: { userAId: fromId, userBId: toId, status: 'PENDING' },
+      return tx.friend.create({ data: { userAId: fromId, userBId: toId, status: 'PENDING' } });
     });
   }
 
