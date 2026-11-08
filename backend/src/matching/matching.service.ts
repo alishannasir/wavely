@@ -19,6 +19,18 @@ export interface QueueEntry {
   queuedAt?: number;
 }
 
+/** A call shorter than this is treated as an instant skip and costs nothing. */
+const FREE_CALL_SECONDS = 10;
+
+/**
+ * Minutes billed for a call: partial minutes count as a whole minute (a 1m29s call is 2), but an instant skip is
+ * free. Rounded to whole seconds first so a call that lasted exactly N minutes plus a few milliseconds costs N.
+ */
+export function billableMinutes(durationMs: number): number {
+  const seconds = Math.round(durationMs / 1000);
+  return seconds < FREE_CALL_SECONDS ? 0 : Math.ceil(seconds / 60);
+}
+
 const QUEUE_KEY = 'mm:queue';
 const ENTRY_TTL_SEC = 600;
 const RECENT_WINDOW_MS = 30 * 60 * 1000;
@@ -165,7 +177,7 @@ export class MatchingService implements OnModuleInit, OnModuleDestroy {
     if (claimed.count === 0) return;
 
     // Minutes are billed when the call ends; matches were already counted when it started.
-    const minutes = Math.round((capped.getTime() - session.startedAt.getTime()) / 60_000);
+    const minutes = billableMinutes(capped.getTime() - session.startedAt.getTime());
     if (minutes <= 0) return;
     const date = new Date(session.startedAt.toISOString().slice(0, 10)); // day the call started (UTC)
     for (const userId of [session.userAId, session.userBId]) {

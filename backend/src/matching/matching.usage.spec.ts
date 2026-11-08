@@ -1,4 +1,4 @@
-import { MatchingService } from './matching.service';
+import { MatchingService, billableMinutes } from './matching.service';
 
 function setup(session: any) {
   const prisma: any = {
@@ -48,5 +48,17 @@ describe('usage accounting', () => {
     prisma.callSession.updateMany.mockResolvedValue({ count: 0 });
     await svc.closeSession('s');
     expect(prisma.dailyUsage.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe('billableMinutes', () => {
+  it('instant skips are free, partial minutes count as a whole minute', () => {
+    expect(billableMinutes(0)).toBe(0);
+    expect(billableMinutes(9_000)).toBe(0); // a skip
+    expect(billableMinutes(10_000)).toBe(1);
+    expect(billableMinutes(29_000)).toBe(1); // used to round down to 0: free chatting
+    expect(billableMinutes(60_000)).toBe(1);
+    expect(billableMinutes(89_000)).toBe(2);
+    expect(billableMinutes(5 * 60_000 + 40)).toBe(5); // a few ms over a whole minute is not another minute
   });
 });

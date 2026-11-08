@@ -18,6 +18,13 @@ const TRIAL_ENTITLEMENT: Entitlement = {
   dailyMatches: null,
 };
 
+/**
+ * Premium needs an ACTIVE subscription whose paid period has not run out. Stripe renews it by sending a webhook that
+ * moves `currentPeriodEnd` forward; the grace window keeps a slow or retried webhook from locking a paying user out
+ * for a few minutes. It also means a missed cancellation webhook can no longer give premium forever.
+ */
+export const PERIOD_GRACE_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class EntitlementsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -27,7 +34,11 @@ export class EntitlementsService {
     if (user.trialEndsAt.getTime() > Date.now()) return TRIAL_ENTITLEMENT;
 
     const sub = await this.prisma.subscription.findFirst({
-      where: { userId: user.id, status: 'ACTIVE' },
+      where: {
+        userId: user.id,
+        status: 'ACTIVE',
+        currentPeriodEnd: { gt: new Date(Date.now() - PERIOD_GRACE_MS) },
+      },
       orderBy: { currentPeriodEnd: 'desc' },
     });
     const plan: SubscriptionPlan = sub?.plan ?? 'FREE';

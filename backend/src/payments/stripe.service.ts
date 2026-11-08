@@ -1,8 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { primaryFrontendUrl } from '../common/cors';
 import Stripe from 'stripe';
 import { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { PERIOD_GRACE_MS } from './entitlements.service';
 
 @Injectable()
 export class StripeService {
@@ -24,12 +25,25 @@ export class StripeService {
   async createCheckout(userId: string, plan: 'MONTHLY' | 'ANNUAL') {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+    // One live subscription per user: a second checkout would bill them twice and could not be cancelled in the portal.
+    const live = await this.prisma.subscription.findFirst({
+      where: { userId, status: 'ACTIVE', currentPeriodEnd: { gt: new Date(Date.now() - PERIOD_GRACE_MS) } },
+      select: { id: true },
+    });
+    if (live) throw new ConflictException('You already have an active subscription. Manage it from your billing portal.');
+    // Reuse the Stripe customer the user already has, so all their payments stay under one customer.
+    const known = await this.prisma.subscription.findFirst({
+      where: { userId, stripeCustomerId: { not: null } },
+      orderBy: { currentPeriodEnd: 'desc' },
+      select: { stripeCustomerId: true },
+    });
     const frontend = primaryFrontendUrl();
     const session = await this.stripe.checkout.sessions.create({
       mode: 'subscription',
       line_items: [{ price: this.priceFor(plan), quantity: 1 }],
       client_reference_id: userId,
-      customer_email: user.email ?? undefined,
+      // Stripe accepts either an existing customer or an email, not both.
+      ...(known?.stripeCustomerId ? { customer: known.stripeCustomerId } : { customer_email: user.email ?? undefined }),
       success_url: `${frontend}/home?billing=success`,
       cancel_url: `${frontend}/upgrade?billing=cancelled`,
       metadata: { userId, plan },
