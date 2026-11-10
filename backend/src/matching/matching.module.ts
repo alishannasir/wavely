@@ -9,6 +9,7 @@ import { LivekitService } from './livekit.service';
 import { ModerationModule } from '../moderation/moderation.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { FriendsModule } from '../friends/friends.module';
+import { IdentityModule } from '../identity/identity.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { FriendsModule } from '../friends/friends.module';
     PaymentsModule,
     ModerationModule,
     FriendsModule,
+    IdentityModule,
   ],
   providers: [MatchingGateway, MatchingService, CallStateService, LivekitService],
 })

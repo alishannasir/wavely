@@ -34,6 +34,24 @@ export class LivekitService {
   }
 
   /**
+   * Turns a person's camera and microphone off or back on from the server (a modified browser cannot ignore it):
+   * while a friend room is paused for verification nobody can publish. Best effort.
+   */
+  async setPublishing(roomName: string, identities: string[], canPublish: boolean): Promise<void> {
+    const base = process.env.LIVEKIT_API_URL || this.url;
+    if (!base) return;
+    const host = base.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+    const client = new RoomServiceClient(host, process.env.LIVEKIT_API_KEY ?? '', process.env.LIVEKIT_API_SECRET ?? '');
+    await Promise.all(
+      identities.map((id) =>
+        client
+          .updateParticipant(roomName, id, undefined, { canPublish, canSubscribe: true, canPublishData: canPublish })
+          .catch((err: Error) => this.log.warn(`updateParticipant ${id}: ${err.message}`)),
+      ),
+    );
+  }
+
+  /**
    * A LiveKit token only limits when someone can JOIN; a connected participant stays connected.
    * To really end a call at the free-tier limit the server removes the participants. Best effort.
    */

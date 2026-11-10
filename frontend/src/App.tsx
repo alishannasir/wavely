@@ -36,6 +36,7 @@ const Privacy = lazy(() => import('./pages/content/Legal').then((m) => ({ defaul
 const Guides = lazy(() => import('./pages/content/Guides'));
 const Guide = lazy(() => import('./pages/content/Guide'));
 const RegionBlocked = lazy(() => import('./pages/RegionBlocked'));
+const VerifyIdentityMock = lazy(() => import('./pages/VerifyIdentityMock'));
 
 /** Old URLs (/home, /start, /call) now live at /chat; keep the query string (?friend=, ?accept=). */
 function ToChat() {
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/upgrade" element={<Upgrade />} />
           <Route path="/friends" element={<Friends />} />
           <Route path="/unavailable" element={<RegionBlocked />} />
+          <Route path="/verify-identity/mock" element={<VerifyIdentityMock />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

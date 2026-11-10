@@ -17,6 +17,7 @@ export interface User {
   currentStreak: number;
   trialEndsAt: string;
   creditCents: number;
+  idVerifiedAt?: string | null;
 }
 
 interface AuthState {

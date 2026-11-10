@@ -12,6 +12,7 @@ import ChatPanel, { ChatMsg } from '../components/chat/ChatPanel';
 import FloatingChat from '../components/chat/FloatingChat';
 import { useIsDesktop } from '../lib/useIsDesktop';
 import { BlockSheet, FiltersModal, GenderModal, LimitModal, ReportSheet, SettingsModal, genderEmoji } from '../components/chat/modals';
+import VerifyGateModal, { GateInfo } from '../components/chat/VerifyGateModal';
 import { IncomingCallBanner } from '../lib/IncomingCall';
 import { OnlineCount } from '../lib/online';
 import { captureFrame } from '../lib/evidence';
@@ -113,6 +114,7 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [blurred, setBlurred] = useState(false);
+  const [gate, setGate] = useState<GateInfo | null>(null); // friend room paused for verification (or blocked)
   const [volume, setVolume] = useState(1);
   const [friendRequested, setFriendRequested] = useState(false);
   const [limitMsg, setLimitMsg] = useState<string | null>(null);
@@ -145,6 +147,8 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
   const lkRef = useRef<typeof import('livekit-client') | null>(null);
   const scannerRef = useRef<NsfwScanner | null>(null);
   const flaggedSessionRef = useRef<string | null>(null);
+  // True once both people verified and the room was allowed to continue: the scanner then stops blurring and flagging.
+  const adultOkRef = useRef(false);
   const volumeRef = useRef(1);
   const skipRef = useRef<() => void>(() => {});
   const cidRef = useRef(0);
@@ -266,6 +270,7 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
       const scanner = new NsfwScanner({
         getVideo: () => remoteVideoRef.current,
         onExplicit: (score) => {
+          if (adultOkRef.current) return; // both verified adults agreed to continue this room
           setBlurred(true);
           const session = sessionRef.current;
           // One automatic flag per call: the server turns it into a moderator report with this frame.
@@ -301,6 +306,8 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
       void previous?.disconnect(false);
 
       sessionRef.current = payload;
+      adultOkRef.current = false;
+      setGate(null);
       hiddenNoteRef.current = false;
       setLimitAt(typeof payload.limitSeconds === 'number' ? Date.now() + payload.limitSeconds * 1000 : null);
       setMessages([{ id: ++msgId.current, kind: 'bot', country: payload.peer.country }]);
@@ -431,6 +438,42 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
       else backToIdle('This account started a chat in another tab.');
     };
 
+    // ---- friend room paused for verification (server decides; see RoomGateService) ----
+    const gateInfo = (p: { sessionId: string; me: boolean; peer: boolean; reason: string | null }, state: GateInfo['state']): GateInfo => ({ ...p, state });
+    const onRoomPaused = (p: { sessionId: string; me: boolean; peer: boolean; reason: string | null }) => {
+      setGate(gateInfo(p, 'paused'));
+      setBlurred(true);
+    };
+    const onVerifyStatus = (p: { me: boolean; peer: boolean }) => setGate((g) => (g ? { ...g, me: p.me, peer: p.peer } : g));
+    const onRoomBlocked = (p: { sessionId: string; me: boolean; peer: boolean; reason: string | null }) => {
+      setGate(gateInfo(p, 'blocked'));
+      setBlurred(true);
+    };
+    const onRoomResumed = async () => {
+      adultOkRef.current = true;
+      setGate(null);
+      setBlurred(false);
+      // The server switched everyone's camera and microphone off while paused; open them again and publish.
+      try {
+        releaseTracks();
+        const tracks = await openTracks();
+        const room = roomRef.current;
+        if (!room) return;
+        await Promise.all([tracks.video.unmute(), tracks.audio.unmute()]);
+        await room.localParticipant.publishTrack(tracks.video);
+        await room.localParticipant.publishTrack(tracks.audio);
+        setMicOn(true);
+        setCamOn(true);
+      } catch {
+        addMsg({ kind: 'bot', text: 'Could not turn your camera back on. Leave the call and call again.' });
+      }
+    };
+    const onRoomEnded = async () => {
+      setGate(null);
+      await disconnectRoom();
+      navigate('/friends');
+    };
+
     const onRelaxed = () => addMsg({ kind: 'bot', text: 'Still searching — widening your filters…' });
 
     const onDeclined = () => {
@@ -456,6 +499,11 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
     socket.on('limit-reached', onLimitReached);
     socket.on('call-declined', onDeclined);
     socket.on('call-unavailable', onUnavailable);
+    socket.on('room-paused', onRoomPaused);
+    socket.on('room-verify-status', onVerifyStatus);
+    socket.on('room-blocked', onRoomBlocked);
+    socket.on('room-resumed', onRoomResumed);
+    socket.on('room-ended', onRoomEnded);
     // A socket that already failed earlier (e.g. opened on another page) will not report again unless retried.
     if (!socket.connected && !socket.active) socket.connect();
 
@@ -484,6 +532,11 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
       socket.off('limit-reached', onLimitReached);
       socket.off('call-declined', onDeclined);
       socket.off('call-unavailable', onUnavailable);
+      socket.off('room-paused', onRoomPaused);
+      socket.off('room-verify-status', onVerifyStatus);
+      socket.off('room-blocked', onRoomBlocked);
+      socket.off('room-resumed', onRoomResumed);
+      socket.off('room-ended', onRoomEnded);
       socket.emit('leave');
       aliveRef.current = false;
       timersRef.current.forEach((t) => window.clearTimeout(t));
@@ -902,6 +955,11 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
             void startPreview();
           }
         }}
+      />
+      <VerifyGateModal
+        gate={gate}
+        onDecline={() => gate && getSocket().emit('verify-decline', { sessionId: gate.sessionId })}
+        onEnd={() => void stop()}
       />
       <LimitModal open={limitMsg !== null} message={limitMsg} onClose={() => setLimitMsg(null)} />
       {showRules && (

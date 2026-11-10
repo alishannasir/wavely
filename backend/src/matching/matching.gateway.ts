@@ -36,6 +36,7 @@ import { corsOrigin, isOriginAllowed } from '../common/cors';
 import { readSessionCookie } from '../auth/session-cookie';
 import { originSecretOk } from '../common/origin-secret';
 import { isCountryAllowed, resolveCountry } from '../common/geo/geo.config';
+import { GateEvent, RoomGateService } from '../identity/room-gate.service';
 
 interface FindMatchPayload {
   preferredGender?: string;
@@ -94,6 +95,7 @@ export class MatchingGateway
     private readonly messages: MessagesService,
     private readonly bans: BansService,
     private readonly reports: ReportsService,
+    private readonly gate: RoomGateService,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
@@ -106,6 +108,7 @@ export class MatchingGateway
     this.kickSub.on('message', (_channel, userId) => {
       this.server.in(userRoom(userId)).disconnectSockets(true);
     });
+    this.gate.onEvent((e) => this.onGateEvent(e));
     this.rematchTimer = setInterval(() => void this.rematchTick().catch(() => undefined), REMATCH_TICK_MS);
     this.rematchTimer.unref();
     this.deadlineTimer = setInterval(() => void this.deadlineTick().catch(() => undefined), DEADLINE_TICK_MS);
@@ -176,6 +179,7 @@ export class MatchingGateway
         if (me.tokenVersion !== tokenVersion) return next(new Error('UNAUTHORIZED')); // signed out by a password/email change
 
         socket.data.userId = userId;
+        socket.data.ipCountry = resolveCountry(socket.handshake.headers);
         socket.data.isGuest = me.isGuest;
         socket.data.emailVerified = !!me.emailVerifiedAt;
         // Every tab/device joins the user's room, so direct emits reach all of them.
@@ -382,6 +386,7 @@ export class MatchingGateway
 
   /** Ends calls whose free-tier minutes ran out: tell the user, remove them from LiveKit, close the session. */
   private async deadlineTick() {
+    await this.gate.timeoutTick().catch(() => undefined); // verification popups nobody finished
     for (const due of await this.callState.claimDue(Date.now())) {
       const limitedIdx = due.users.indexOf(due.limitedUserId ?? '');
       const limitedSocket = limitedIdx >= 0 ? due.sockets[limitedIdx] : due.sockets[0];
@@ -611,6 +616,11 @@ export class MatchingGateway
   async callChat(@ConnectedSocket() client: Socket, @MessageBody() payload?: { text?: string; cid?: number }) {
     const info = await this.callState.getBySocket(client.id);
     if (!info) return;
+    // A friend room waiting for both people to verify (or blocked) relays nothing.
+    if (await this.gate.isHeld(info.sessionId)) {
+      client.emit('chat-warning', { message: 'Chat is paused until both of you have verified.' });
+      return;
+    }
     if (await this.isRepeatSpam(info.userId, payload?.text)) {
       client.emit('chat-warning', { message: 'Please do not repeat the same message.' });
       return;
@@ -653,6 +663,48 @@ export class MatchingGateway
     } catch {
       /* rate limited or invalid: the client already blurred locally, nothing to tell it */
     }
+    await this.triggerGate(info.sessionId, 'VIDEO', score, client, info.peerSocketId);
+  }
+
+  /** A friend call turned sexual: pause it and ask both people to verify (does nothing for random calls or when the feature is off). */
+  private async triggerGate(sessionId: string, trigger: 'VIDEO' | 'TEXT', score: number, client: Socket, peerSocketId: string) {
+    try {
+      const peer = (await this.server.in(peerSocketId).fetchSockets())[0];
+      const result = await this.gate.trigger(sessionId, trigger, score, [
+        (client.data.ipCountry as string | null) ?? null,
+        (peer?.data?.ipCountry as string | null) ?? null,
+      ]);
+      if (result === 'END') {
+        this.server.to(client.id).to(peerSocketId).emit('room-ended', { reason: 'BLOCKED' });
+        void this.livekit.removeParticipants(`room_${sessionId}`, [client.data.userId as string]);
+        await this.endActiveCall(client);
+      }
+    } catch (err) {
+      this.logger.warn(`room gate failed for ${sessionId}: ${(err as Error).message}`);
+    }
+  }
+
+  /** Tells both people what happened to the room and switches their camera and microphone off or on. */
+  private async onGateEvent(e: GateEvent) {
+    const send = (userId: string, peerId: string) => {
+      const payload = { sessionId: e.sessionId, me: !!e.verified[userId], peer: !!e.verified[peerId], reason: e.reason ?? null };
+      const name = { PAUSED: 'room-paused', STATUS: 'room-verify-status', RESUMED: 'room-resumed', BLOCKED: 'room-blocked' }[e.type];
+      this.server.to(userRoom(userId)).emit(name, payload);
+    };
+    send(e.userAId, e.userBId);
+    send(e.userBId, e.userAId);
+    if (e.type !== 'STATUS') {
+      await this.livekit.setPublishing(`room_${e.sessionId}`, [e.userAId, e.userBId], e.type === 'RESUMED');
+    }
+  }
+
+  /** The person closed the verification popup or refused. */
+  @SubscribeMessage('verify-decline')
+  async verifyDecline(@ConnectedSocket() client: Socket, @MessageBody() payload?: { sessionId?: string }) {
+    if (await this.tooFast(client, 'verify-decline', 10)) return;
+    const info = await this.callState.getBySocket(client.id);
+    if (!info || info.sessionId !== payload?.sessionId) return;
+    await this.gate.decline(info.sessionId, info.userId);
   }
 
   @SubscribeMessage('leave')
@@ -695,7 +747,7 @@ export class MatchingGateway
       const ttl = tokenTtlSeconds(deadline ? deadline.atMs - now : null);
 
       const session = await this.prisma.callSession.create({
-        data: { userAId: a.userId, userBId: b.userId },
+        data: { userAId: a.userId, userBId: b.userId, kind: event === 'call-started' ? 'FRIEND' : 'RANDOM' },
       });
       sessionId = session.id;
       const roomName = `room_${session.id}`;
