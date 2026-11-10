@@ -86,7 +86,11 @@ function RoundBtn({ onClick, on = true, children, label }: { onClick: () => void
   );
 }
 
-export default function Chat() {
+/**
+ * The chat screen. `embedded` shows it as a card inside another page (the home page): no header or bottom tabs,
+ * a "Full page" link to /chat, it starts searching by itself, and it does not listen for Esc on the whole page.
+ */
+export default function Chat({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const friendParam = params.get('friend');
@@ -458,8 +462,11 @@ export default function Chat() {
       start(); // friend calls ring straight away
     } else {
       go('idle');
-      void startPreview();
       preloadNsfwModel();
+      void startPreview().then(() => {
+        // On the home page the chat starts by itself, but only with a working camera and after the rules were accepted.
+        if (embedded && aliveRef.current && tracksRef.current && useAuth.getState().user?.rulesAcceptedAt) start();
+      });
     }
 
     return () => {
@@ -483,7 +490,7 @@ export default function Chat() {
       void disconnectRoom();
       releaseTracks();
     };
-  }, [token, navigate, later, start, disconnectRoom, isDirect, go, addMsg, startPreview, releaseTracks, stopScanner, loadLivekit, openTracks]);
+  }, [token, navigate, later, start, disconnectRoom, isDirect, go, addMsg, startPreview, releaseTracks, stopScanner, loadLivekit, openTracks, embedded]);
 
   // ---- actions ----
   async function toggleMic() {
@@ -613,6 +620,7 @@ export default function Chat() {
 
   // Esc = Next (random mode). It does nothing while a dialog is open or while typing (it just leaves the box).
   useEffect(() => {
+    if (embedded) return; // on the home page Esc must not skip the person you are talking to
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       const el = document.activeElement as HTMLElement | null;
@@ -625,7 +633,7 @@ export default function Chat() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isDirect]);
+  }, [isDirect, embedded]);
 
   if (!user) return <Navigate to="/" replace />;
 
@@ -657,10 +665,16 @@ export default function Chat() {
   const chatNote = planNote && (trialDaysLeft > 0 || capped || user.isGuest) ? planNote : null;
 
   return (
-    <div className={`flex h-[100dvh] flex-col bg-page ${phase === 'idle' ? '' : 'pb-safe'}`}>
+    <div
+      className={
+        embedded
+          ? 'relative flex h-full min-h-0 flex-col overflow-hidden rounded-3xl bg-stage text-ink shadow-2xl'
+          : `flex h-[100dvh] flex-col bg-page ${phase === 'idle' ? '' : 'pb-safe'}`
+      }
+    >
       <div ref={audioRef} className="hidden" />
 
-      <header className="pt-safe flex w-full items-center justify-between px-3 py-1.5 md:px-4">
+      <header className={`pt-safe w-full items-center justify-between px-3 py-1.5 md:px-4 ${embedded ? 'hidden' : 'flex'}`}>
         <Link to="/" aria-label="Home">
           <Logo size={30} />
         </Link>
@@ -681,9 +695,9 @@ export default function Chat() {
         </nav>
       </header>
 
-      <main className="flex min-h-0 w-full flex-1 flex-col px-1 pb-1 md:px-2 md:pb-2">
+      <main className={`flex min-h-0 w-full flex-1 flex-col ${embedded ? '' : 'px-1 pb-1 md:px-2 md:pb-2'}`}>
         {/* Videos: stranger on the left, you on the right (desktop); you become a small picture-in-picture on phones. */}
-        <div ref={stageRef} className="relative grid min-h-0 flex-1 grid-rows-2 gap-0.5 overflow-hidden rounded-2xl bg-stage md:grid-cols-2 md:grid-rows-1 md:gap-0">
+        <div ref={stageRef} className={`relative grid min-h-0 flex-1 grid-rows-2 gap-0.5 overflow-hidden bg-stage ${embedded ? '' : 'rounded-2xl'} md:grid-cols-2 md:grid-rows-1 md:gap-0`}>
           <div className="group relative min-h-0 overflow-hidden">
             <video
               ref={remoteVideoRef}
@@ -793,8 +807,34 @@ export default function Chat() {
                 <ChunkyButton size="sm" onClick={() => void startPreview()}>Try again</ChunkyButton>
               </div>
             )}
+            {/* Controls on my own side, top-left of my video. */}
+            <div className="absolute left-2 top-2 z-30">
+              <div className="flex items-center gap-1 rounded-full border border-white/25 bg-black/25 p-1 backdrop-blur-md">
+                {isDirect ? (
+                  <GlassBtn tone="danger" onClick={() => void stop()}>End call</GlassBtn>
+                ) : (
+                  <>
+                    <GlassBtn
+                      tone="primary"
+                      onClick={phase === 'idle' ? begin : () => void next()}
+                      disabled={phase === 'connecting'}
+                      title={phase === 'idle' ? 'Start' : 'Next (Esc)'}
+                    >
+                      {phase === 'idle' ? 'Start' : 'Next'}
+                    </GlassBtn>
+                    <GlassBtn tone="danger" onClick={() => void stop()} disabled={!busy}>Stop</GlassBtn>
+                    <GlassBtn onClick={() => setShowFilters(true)} title="Country" aria-label="Country filter">
+                      <span aria-hidden>{countryBtn}</span> <span className="hidden sm:inline">Country</span>
+                    </GlassBtn>
+                    <GlassBtn onClick={() => setShowGender(true)} title="I am" aria-label="I am">
+                      <span aria-hidden>{genderEmoji(user.gender)}</span> <span className="hidden sm:inline">I am</span>
+                    </GlassBtn>
+                  </>
+                )}
+              </div>
+            </div>
             {inCall && (
-              <div className="absolute left-2 top-2 flex gap-2 md:bottom-2 md:top-auto">
+              <div className="absolute bottom-2 left-2 flex gap-2">
                 <RoundBtn onClick={toggleMic} on={micOn} label={micOn ? 'Mute microphone' : 'Unmute microphone'}>
                   <Icon path={MIC} label="Microphone" />
                 </RoundBtn>
@@ -805,32 +845,15 @@ export default function Chat() {
             )}
           </div>
 
-          {/* Small, see-through controls in the middle: at the bottom of your own video on a phone, at the top of the videos on desktop. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-2 z-30 flex justify-center md:bottom-auto md:top-2">
-            <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-white/25 bg-black/25 p-1 backdrop-blur-md">
-              {isDirect ? (
-                <GlassBtn tone="danger" onClick={() => void stop()}>End call</GlassBtn>
-              ) : (
-                <>
-                  <GlassBtn
-                    tone="primary"
-                    onClick={phase === 'idle' ? begin : () => void next()}
-                    disabled={phase === 'connecting'}
-                    title={phase === 'idle' ? 'Start' : 'Next (Esc)'}
-                  >
-                    {phase === 'idle' ? 'Start' : 'Next'}
-                  </GlassBtn>
-                  <GlassBtn tone="danger" onClick={() => void stop()} disabled={!busy}>Stop</GlassBtn>
-                  <GlassBtn onClick={() => setShowFilters(true)} title="Country" aria-label="Country filter">
-                    <span aria-hidden>{countryBtn}</span> <span className="hidden sm:inline">Country</span>
-                  </GlassBtn>
-                  <GlassBtn onClick={() => setShowGender(true)} title="I am" aria-label="I am">
-                    <span aria-hidden>{genderEmoji(user.gender)}</span> <span className="hidden sm:inline">I am</span>
-                  </GlassBtn>
-                </>
-              )}
-            </div>
-          </div>
+          {embedded && (
+            <Link
+              to="/chat"
+              className="absolute left-2 top-2 z-40 rounded-full border border-white/25 bg-black/25 px-3 py-1 text-sm font-semibold text-white backdrop-blur-md hover:bg-black/40"
+              aria-label="Open the chat in full page"
+            >
+              ⤢ Full page
+            </Link>
+          )}
 
           {/* Desktop: the chat is a small bar on the edge of the videos (click to open, drag to move, drag a corner to resize). */}
           {isDesktop && (
@@ -856,7 +879,7 @@ export default function Chat() {
             onSend={sendChat}
             onReport={inCall ? () => setShowReport(true) : undefined}
             note={chatNote}
-            className="mt-1 h-[30dvh] shrink-0"
+            className={`mt-1 shrink-0 ${embedded ? 'h-36' : 'h-[30dvh]'}`}
           />
         )}
       </main>
@@ -890,7 +913,7 @@ export default function Chat() {
       )}
       <IncomingCallBanner />
       {/* App-style tabs on phones; hidden during a search or call so the video gets the space. */}
-      {phase === 'idle' && <BottomNav />}
+      {phase === 'idle' && !embedded && <BottomNav />}
     </div>
   );
 }

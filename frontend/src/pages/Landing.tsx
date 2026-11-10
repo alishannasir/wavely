@@ -1,3 +1,4 @@
+import { Suspense, lazy } from 'react';
 import { Link } from 'react-router-dom';
 import SiteHeader from '../components/ui/SiteHeader';
 import SiteFooter from '../components/ui/SiteFooter';
@@ -10,6 +11,9 @@ import { useSignedInUser } from '../store/auth';
 import Avatar from '../components/ui/Avatar';
 import { BRAND } from '../brand';
 import seo from '../seo/routes.json';
+
+// Loaded only when the visitor has a session, so the camera and video code stay out of the first page load.
+const EmbeddedChat = lazy(() => import('./Chat'));
 
 const STEPS = [
   { n: '1', title: 'Press Start', text: 'Confirm you are 18 or older and allow your camera. No account is needed to try it.' },
@@ -51,8 +55,8 @@ export default function Landing() {
     <div className="min-h-screen bg-page">
       <SiteHeader onStart={start} />
 
-      <DoodleBackground tone="brand" className="px-4 py-14 text-center md:py-20">
-        <div className="mx-auto max-w-3xl">
+      <DoodleBackground tone="brand" className="px-3 py-5 text-center md:py-6">
+        <div className="mx-auto max-w-6xl">
           {account ? (
             <>
               <span className="mb-4 inline-flex rounded-full bg-white/15 p-1.5">
@@ -64,17 +68,22 @@ export default function Landing() {
               <p className="mx-auto mt-4 max-w-xl text-lg text-white/90">Ready to meet someone new? Press the button and you are in a chat in seconds.</p>
             </>
           ) : (
-            <>
-              <h1 className="font-display text-4xl font-semibold leading-tight md:text-6xl">
-                Free random video chat — meet someone new today
-              </h1>
-              <p className="mx-auto mt-4 max-w-xl text-lg text-white/90">{BRAND.description}</p>
-            </>
+            // The headline is no longer shown, but the page keeps its main heading for search engines and screen readers.
+            <h1 className="sr-only">Free random video chat — meet someone new today</h1>
+          )}
+          {user && (
+            <div className="mx-auto mt-4 h-[40rem] w-full text-left md:h-[max(34rem,calc(100dvh-9.5rem))]">
+              <Suspense fallback={<div className="h-full w-full animate-pulse rounded-3xl bg-white/10" aria-label="Loading chat" />}>
+                <EmbeddedChat embedded />
+              </Suspense>
+            </div>
           )}
           <div className="mt-8 flex flex-col items-center gap-4">
-            <ChunkyButton size="lg" onClick={start} className="min-w-[16rem]">
-              Start chatting now!
-            </ChunkyButton>
+            {!user && (
+              <ChunkyButton size="lg" onClick={start} className="min-w-[16rem]">
+                Start chatting now!
+              </ChunkyButton>
+            )}
             <OnlineCount tone="dark" />
             {account ? (
               <p className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm font-semibold text-white/90">
