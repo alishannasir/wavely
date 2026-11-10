@@ -26,6 +26,7 @@ export function sanitizeUser(user: User) {
     currentStreak: user.currentStreak,
     creditCents: user.creditCents,
     rulesAcceptedAt: user.rulesAcceptedAt,
+    idVerifiedAt: user.idVerifiedAt,
   };
 }
 
