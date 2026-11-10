@@ -5,7 +5,7 @@ import { BRAND } from '../../brand';
 /**
  * Terms of service and privacy policy. The text describes what the code does today
  * (see docs/MODERATION.md). If retention, providers or data collected change, update it here.
- * Have a lawyer review before relying on it. Fill the [BRACKETED] placeholders.
+ * Have a lawyer review before relying on it.
  */
 const UPDATED = '10 November 2026';
 
@@ -204,7 +204,7 @@ const TERMS: Section[] = [
           broken.
         </p>
         <p>
-          These terms are governed by the law of [JURISDICTION], and the courts of [JURISDICTION] will have jurisdiction,
+          These terms are governed by the law of Pakistan, and the courts of Pakistan will have jurisdiction,
           except where the law gives you the right to use your local courts.
         </p>
       </>
@@ -217,7 +217,7 @@ const PRIVACY: Section[] = [
     title: '1. Who is responsible',
     body: (
       <p>
-        {BRAND.name} (“we”, “us”) is responsible for your data. Operator: [LEGAL ENTITY NAME AND ADDRESS]. Contact:{' '}
+        {BRAND.name} (“we”, “us”) is responsible for your data. Operator: Wavely, Pakistan. Contact:{' '}
         {BRAND.supportEmail}.
       </p>
     ),
