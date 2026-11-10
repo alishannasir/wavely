@@ -138,7 +138,8 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLDivElement>(null);
   const isDesktop = useIsDesktop();
-  const stageRef = useRef<HTMLDivElement>(null); // the video area the floating chat lives in
+  const stageRef = useRef<HTMLDivElement>(null); // the video area the floating chat lives in (desktop)
+  const ownRef = useRef<HTMLDivElement>(null); // my own video panel: the phone's chat button lives there
   const tracksRef = useRef<LocalTracks | null>(null);
   const creatingRef = useRef<Promise<void> | null>(null);
   const lkRef = useRef<typeof import('livekit-client') | null>(null);
@@ -695,9 +696,9 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
         </nav>
       </header>
 
-      <main className={`flex min-h-0 w-full flex-1 flex-col ${embedded ? '' : 'px-1 pb-1 md:px-2 md:pb-2'}`}>
+      <main className={`flex min-h-0 w-full flex-1 flex-col ${embedded ? '' : 'md:px-2 md:pb-2'}`}>
         {/* Videos: stranger on the left, you on the right (desktop); you become a small picture-in-picture on phones. */}
-        <div ref={stageRef} className={`relative grid min-h-0 flex-1 grid-rows-2 gap-0.5 overflow-hidden bg-stage ${embedded ? '' : 'rounded-2xl'} md:grid-cols-2 md:grid-rows-1 md:gap-0`}>
+        <div ref={stageRef} className={`relative grid min-h-0 flex-1 grid-rows-2 gap-0.5 overflow-hidden bg-stage ${embedded ? '' : 'md:rounded-2xl'} md:grid-cols-2 md:grid-rows-1 md:gap-0`}>
           <div className="group relative min-h-0 overflow-hidden">
             <video
               ref={remoteVideoRef}
@@ -799,7 +800,7 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
             )}
           </div>
 
-          <div className="relative min-h-0 overflow-hidden bg-stage">
+          <div ref={ownRef} className="relative min-h-0 overflow-hidden bg-stage">
             <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full -scale-x-100 object-cover" />
             {previewError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-stage/90 p-4 text-center text-sm text-white">
@@ -843,6 +844,20 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
                 </RoundBtn>
               </div>
             )}
+            {/* Phone: both videos fill the screen; the chat is a small button on my own video. Tap it to open, drag it to move it. */}
+            {!isDesktop && (
+              <FloatingChat compact containerRef={ownRef} messageCount={messages.length}>
+                <ChatPanel
+                  variant="floating"
+                  messages={messages}
+                  canSend={inCall}
+                  onSend={sendChat}
+                  onReport={inCall ? () => setShowReport(true) : undefined}
+                  note={chatNote}
+                  className="h-full"
+                />
+              </FloatingChat>
+            )}
           </div>
 
           {embedded && (
@@ -871,17 +886,6 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
           )}
         </div>
 
-        {/* Phone: the chat sits below both videos, solid and always in view, so nothing needs scrolling. */}
-        {!isDesktop && (
-          <ChatPanel
-            messages={messages}
-            canSend={inCall}
-            onSend={sendChat}
-            onReport={inCall ? () => setShowReport(true) : undefined}
-            note={chatNote}
-            className={`mt-1 shrink-0 ${embedded ? 'h-36' : 'h-[30dvh]'}`}
-          />
-        )}
       </main>
 
       <BlockSheet open={showBlock} name={peer?.displayName ?? 'this person'} onClose={() => setShowBlock(false)} onConfirm={() => void blockPeer()} />

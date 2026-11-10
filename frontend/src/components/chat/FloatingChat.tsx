@@ -1,12 +1,15 @@
 import { ReactNode, RefObject, useEffect, useRef, useState } from 'react';
 
-const BAR_W = 200; // the folded bar
-const BAR_H = 34;
+const BAR_W_FULL = 200; // the folded bar on a desktop
+const BAR_H_FULL = 34;
+const BAR_W_COMPACT = 120; // on a phone it folds to a flat, low tab
+const BAR_H_COMPACT = 28;
 const EDGE_GAP = 6;
 const MIN_W = 220;
 const MIN_H = 150;
 const MOVE_THRESHOLD = 4; // below this a press on the bar is a click, not a drag
 const KEY = 'wavely-chat-dock-v2';
+const KEY_COMPACT = 'wavely-chat-dock-phone-v1';
 
 type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
@@ -20,19 +23,21 @@ interface Saved {
   open: boolean;
 }
 const DEFAULT: Saved = { x: null, y: null, w: 300, h: 230, open: false };
+const DEFAULT_COMPACT: Saved = { x: null, y: null, w: 260, h: 280, open: false };
 
-function load(): Saved {
+function load(compact: boolean): Saved {
+  const base = compact ? DEFAULT_COMPACT : DEFAULT;
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? 'null');
-    if (raw && typeof raw.w === 'number' && typeof raw.h === 'number') return { ...DEFAULT, ...raw };
+    const raw = JSON.parse(localStorage.getItem(compact ? KEY_COMPACT : KEY) ?? 'null');
+    if (raw && typeof raw.w === 'number' && typeof raw.h === 'number') return { ...base, ...raw };
   } catch {
     /* storage can be blocked: use the defaults */
   }
-  return DEFAULT;
+  return base;
 }
-function save(s: Saved) {
+function save(s: Saved, compact: boolean) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(s));
+    localStorage.setItem(compact ? KEY_COMPACT : KEY, JSON.stringify(s));
   } catch {
     /* ignore */
   }
@@ -47,13 +52,18 @@ export default function FloatingChat({
   containerRef,
   messageCount,
   children,
+  compact = false,
 }: {
   containerRef: RefObject<HTMLElement>;
+  /** Phone: folds to a small button in the bottom-right corner of the container instead of a wide bar. */
+  compact?: boolean;
   /** How many messages there are; a rise while folded lights the dot. */
   messageCount: number;
   children: ReactNode;
 }) {
-  const [s, setS] = useState<Saved>(load);
+  const [s, setS] = useState<Saved>(() => load(compact));
+  const barW = compact ? BAR_W_COMPACT : BAR_W_FULL;
+  const barH = compact ? BAR_H_COMPACT : BAR_H_FULL;
   const [box, setBox] = useState({ w: 0, h: 0 });
   const seen = useRef(messageCount);
   const gesture = useRef<
@@ -78,17 +88,17 @@ export default function FloatingChat({
   const unread = s.open ? 0 : Math.max(0, messageCount - seen.current);
 
   // Size and position in pixels, always inside the video area.
-  const w = s.open ? clamp(s.w, MIN_W, box.w - 2 * EDGE_GAP || s.w) : BAR_W;
-  const h = s.open ? clamp(s.h, MIN_H, box.h - 2 * EDGE_GAP || s.h) : BAR_H;
-  const dockedLeft = (box.w - BAR_W) / 2;
-  const dockedTop = box.h - BAR_H - EDGE_GAP;
+  const w = s.open ? clamp(s.w, MIN_W, box.w - 2 * EDGE_GAP || s.w) : barW;
+  const h = s.open ? clamp(s.h, MIN_H, box.h - 2 * EDGE_GAP || s.h) : barH;
+  const dockedLeft = compact ? box.w - barW - EDGE_GAP : (box.w - barW) / 2;
+  const dockedTop = box.h - barH - EDGE_GAP;
   const left = box.w ? clamp(s.x === null ? dockedLeft : s.x * box.w, 0, box.w - w) : 0;
   const top = box.h ? clamp(s.y === null ? dockedTop : s.y * box.h, 0, box.h - h) : 0;
 
   const put = (patch: Partial<Saved>, persist = true) =>
     setS((cur) => {
       const next = { ...cur, ...patch };
-      if (persist) save(next);
+      if (persist) save(next, compact);
       return next;
     });
   const place = (l: number, t: number) => ({ x: box.w ? l / box.w : null, y: box.h ? t / box.h : null });
@@ -99,15 +109,33 @@ export default function FloatingChat({
     if (!s.open) {
       const ow = clamp(s.w, MIN_W, box.w - 2 * EDGE_GAP);
       const oh = clamp(s.h, MIN_H, box.h - 2 * EDGE_GAP);
-      const l = clamp(left + (BAR_W - ow) / 2, 0, box.w - ow);
-      const t = clamp(top + BAR_H - oh, 0, box.h - oh);
+      const l = clamp(left + (barW - ow) / 2, 0, box.w - ow);
+      const t = clamp(top + barH - oh, 0, box.h - oh);
       put({ open: true, ...place(l, t) });
     } else {
-      const l = clamp(left + (w - BAR_W) / 2, 0, box.w - BAR_W);
-      const t = clamp(top + h - BAR_H, 0, box.h - BAR_H);
+      const l = clamp(left + (w - barW) / 2, 0, box.w - barW);
+      const t = clamp(top + h - barH, 0, box.h - barH);
       put({ open: false, ...place(l, t) });
     }
   }
+
+  /** Phone: three sizes to pick with a tap. The bottom-right corner stays where it is, so the window grows up and to the left. */
+  const presets = {
+    S: { w: 200, h: 190 },
+    M: { w: 260, h: 280 },
+    L: { w: Math.max(MIN_W, box.w - 2 * EDGE_GAP), h: Math.max(MIN_H, Math.round(box.h * 0.65)) },
+  };
+  function pickSize(key: keyof typeof presets) {
+    if (!box.w) return;
+    const nw = clamp(presets[key].w, MIN_W, box.w - 2 * EDGE_GAP);
+    const nh = clamp(presets[key].h, MIN_H, box.h - 2 * EDGE_GAP);
+    const l = clamp(left + w - nw, 0, box.w - nw);
+    const t = clamp(top + h - nh, 0, box.h - nh);
+    put({ w: nw, h: nh, ...place(l, t) });
+  }
+  const activeSize = (Object.keys(presets) as Array<keyof typeof presets>).find(
+    (k) => Math.abs(w - presets[k].w) < 6 && Math.abs(h - presets[k].h) < 6,
+  );
 
   function onBarDown(e: React.PointerEvent<HTMLDivElement>) {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -126,10 +154,11 @@ export default function FloatingChat({
     const g = gesture.current;
     gesture.current = null;
     if (!g || g.kind !== 'move') return;
-    if (g.moved) setS((cur) => (save(cur), cur));
+    if (g.moved) setS((cur) => (save(cur, compact), cur));
     else toggle();
   }
   function onBarKey(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.target !== e.currentTarget) return; // a key pressed on a size button belongs to that button
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       toggle();
@@ -165,7 +194,7 @@ export default function FloatingChat({
     put({ w: nw, h: nh, ...place(L ? g.left + g.w - nw : g.left, T ? g.top + g.h - nh : g.top) }, false);
   }
   function onGripUp() {
-    if (gesture.current?.kind === 'resize') setS((cur) => (save(cur), cur));
+    if (gesture.current?.kind === 'resize') setS((cur) => (save(cur, compact), cur));
     gesture.current = null;
   }
 
@@ -200,7 +229,7 @@ export default function FloatingChat({
         onPointerCancel={() => (gesture.current = null)}
         onKeyDown={onBarKey}
         className="flex shrink-0 cursor-pointer touch-none select-none items-center justify-between px-3 text-xs font-semibold text-muted active:cursor-grabbing"
-        style={{ height: BAR_H }}
+        style={{ height: barH }}
       >
         <span className="flex items-center gap-1.5">
           <span aria-hidden>💬</span> Chat
@@ -210,7 +239,27 @@ export default function FloatingChat({
             </span>
           )}
         </span>
-        <span aria-hidden className="text-base leading-none">{s.open ? '⌄' : '⌃'}</span>
+        <span className="flex items-center gap-1">
+          {compact && s.open && (
+            <span role="group" aria-label="Chat size" className="mr-1 flex gap-0.5">
+              {(Object.keys(presets) as Array<keyof typeof presets>).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  aria-label={`Chat size ${k}`}
+                  aria-pressed={activeSize === k}
+                  // A press here must not start moving or folding the window.
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => pickSize(k)}
+                  className={`h-6 w-6 rounded-md text-[11px] font-bold ${activeSize === k ? 'bg-brand text-white' : 'bg-surface-2 text-muted'}`}
+                >
+                  {k}
+                </button>
+              ))}
+            </span>
+          )}
+          <span aria-hidden className="text-base leading-none">{s.open ? '⌄' : '⌃'}</span>
+        </span>
       </div>
       {/* One element in both states, so folding never remounts the chat (a half-typed message is kept). */}
       <div className={s.open ? 'min-h-0 flex-1 border-t border-line' : 'hidden'}>{children}</div>
