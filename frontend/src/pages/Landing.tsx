@@ -4,11 +4,11 @@ import SiteHeader from '../components/ui/SiteHeader';
 import SiteFooter from '../components/ui/SiteFooter';
 import DoodleBackground from '../components/ui/DoodleBackground';
 import ChunkyButton from '../components/ui/ChunkyButton';
-import { LogoMark } from '../components/brand/Logo';
+import Logo, { LogoMark } from '../components/brand/Logo';
+import StaticNoise from '../components/ui/StaticNoise';
 import { useStartChat } from '../components/ui/StartChat';
 import { OnlineCount } from '../lib/online';
 import { useSignedInUser } from '../store/auth';
-import Avatar from '../components/ui/Avatar';
 import { BRAND } from '../brand';
 import seo from '../seo/routes.json';
 
@@ -49,7 +49,6 @@ export default function Landing() {
   const { start, modal } = useStartChat();
   const user = useSignedInUser();
   const account = user && !user.isGuest ? user : null;
-  const firstName = (account?.displayName ?? '').split(' ')[0];
 
   return (
     <div className="min-h-screen bg-page">
@@ -57,33 +56,40 @@ export default function Landing() {
 
       <DoodleBackground tone="brand" className="px-3 py-5 text-center md:py-6">
         <div className="mx-auto max-w-6xl">
-          {account ? (
-            <>
-              <span className="mb-4 inline-flex rounded-full bg-white/15 p-1.5">
-                <Avatar name={account.displayName} src={account.avatarUrl} size={72} />
-              </span>
-              <h1 className="font-display text-4xl font-semibold leading-tight md:text-6xl">
-                Welcome back{firstName ? `, ${firstName}` : ''}!
-              </h1>
-              <p className="mx-auto mt-4 max-w-xl text-lg text-white/90">Ready to meet someone new? Press the button and you are in a chat in seconds.</p>
-            </>
-          ) : (
-            // The headline is no longer shown, but the page keeps its main heading for search engines and screen readers.
-            <h1 className="sr-only">Free random video chat — meet someone new today</h1>
-          )}
-          {user && (
-            <div className="mx-auto mt-4 h-[40rem] w-full text-left md:h-[max(34rem,calc(100dvh-9.5rem))]">
+          {/* The headline is not shown (the chat is the page), but the page keeps its main heading for search engines and screen readers. */}
+          <h1 className="sr-only">Free random video chat — meet someone new today</h1>
+          <div className="mx-auto mt-4 h-[40rem] w-full text-left md:h-[max(34rem,calc(100dvh-9.5rem))]">
+            {user ? (
               <Suspense fallback={<div className="h-full w-full animate-pulse rounded-3xl bg-white/10" aria-label="Loading chat" />}>
                 <EmbeddedChat embedded />
               </Suspense>
-            </div>
-          )}
-          <div className="mt-8 flex flex-col items-center gap-4">
-            {!user && (
-              <ChunkyButton size="lg" onClick={start} className="min-w-[16rem]">
-                Start chatting now!
-              </ChunkyButton>
+            ) : (
+              // Same card as the live chat. The camera only opens after the visitor accepts the 18+ rules, so until then
+              // the right half holds the Start button instead of the camera.
+              <div className="grid h-full grid-rows-2 overflow-hidden rounded-3xl bg-stage shadow-2xl md:grid-cols-2 md:grid-rows-1">
+                <div className="relative min-h-0 overflow-hidden">
+                  <StaticNoise />
+                  <div className="absolute inset-0 flex items-center justify-center p-4">
+                    <div className="rounded-3xl bg-white/95 p-4 shadow-lg">
+                      <Logo size={44} />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex min-h-0 flex-col items-center justify-center gap-4 bg-stage p-6 text-center text-white">
+                  <ChunkyButton size="lg" onClick={start} className="min-w-[14rem]">
+                    Start chatting now!
+                  </ChunkyButton>
+                  <OnlineCount tone="dark" />
+                  <p className="text-sm text-white/80">
+                    No signup needed.{' '}
+                    <Link to="/signup" className="font-semibold underline">Create an account</Link> to add friends and use filters.
+                  </p>
+                </div>
+              </div>
             )}
+          </div>
+          {user && (
+          <div className="mt-8 flex flex-col items-center gap-4">
             <OnlineCount tone="dark" />
             {account ? (
               <p className="flex flex-wrap justify-center gap-x-5 gap-y-1 text-sm font-semibold text-white/90">
@@ -98,6 +104,7 @@ export default function Landing() {
               </p>
             )}
           </div>
+          )}
         </div>
       </DoodleBackground>
 
