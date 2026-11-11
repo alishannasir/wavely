@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import type { LocalAudioTrack, LocalVideoTrack, Room } from 'livekit-client';
 import Logo from '../components/brand/Logo';
 import BottomNav from '../components/nav/BottomNav';
+import Avatar from '../components/ui/Avatar';
 import ChunkyButton from '../components/ui/ChunkyButton';
 import FlagPill from '../components/ui/FlagPill';
 import StaticNoise from '../components/ui/StaticNoise';
@@ -895,6 +896,13 @@ export default function Chat({ embedded = false }: { embedded?: boolean } = {}) 
                 <RoundBtn onClick={toggleCam} on={camOn} label={camOn ? 'Turn camera off' : 'Turn camera on'}>
                   <Icon path={CAM} label="Camera" />
                 </RoundBtn>
+              </div>
+            )}
+            {/* On the home page: a small greeting on my own video while I am not in a call. */}
+            {embedded && !user.isGuest && !inCall && (
+              <div className="absolute bottom-2 left-2 z-20 flex max-w-[55%] items-center gap-1.5 rounded-full bg-black/35 py-1 pl-1 pr-3 text-xs font-semibold text-white backdrop-blur-md">
+                <Avatar name={user.displayName} src={user.avatarUrl} size={20} />
+                <span className="truncate">Welcome back{user.displayName ? `, ${user.displayName.split(' ')[0]}` : ''}!</span>
               </div>
             )}
             {/* Phone: both videos fill the screen; the chat is a small button on my own video. Tap it to open, drag it to move it. */}
