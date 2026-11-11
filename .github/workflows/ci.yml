@@ -83,7 +83,7 @@ jobs:
       - run: npm run test
       - run: npm run build
 
-  # Report only: known advisories in dev tooling should not block a merge.
+  # Fails only on high or critical advisories in production dependencies; moderate ones are still printed in the log.
   audit:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -92,5 +92,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: (cd backend && npm audit --omit=dev)
-      - run: (cd frontend && npm audit --omit=dev)
+      - name: Audit backend
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: backend
+      - name: Audit frontend
+        if: always()
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: frontend
