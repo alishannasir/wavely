@@ -8,7 +8,11 @@ export type AuditAction =
   | 'HOLD_RELEASED'
   | 'USER_STATUS'
   | 'ROLE_CHANGED'
-  | 'APPEAL_DECIDED';
+  | 'APPEAL_DECIDED'
+  | 'GATE_PAUSED'
+  | 'GATE_RESUMED'
+  | 'GATE_BLOCKED'
+  | 'ID_RESULT';
 
 /** Append-only record of what moderators and admins did. The app never edits or deletes entries. */
 @Injectable()

@@ -74,6 +74,25 @@ enum ReportReason {
   OTHER
 }
 
+enum CallKind {
+  RANDOM
+  FRIEND
+}
+
+enum IdentityStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  EXPIRED
+  REVIEW
+}
+
+enum GateState {
+  PAUSED_VERIFY
+  RESUMED
+  BLOCKED
+}
+
 enum ReportStatus {
   OPEN
   REVIEWING
@@ -81,51 +100,57 @@ enum ReportStatus {
 }
 
 model User {
-  id            String       @id @default(cuid())
-  email         String?      @unique
+  id                String       @id @default(cuid())
+  email             String?      @unique
   // Guests: random chat only, no email. Self-attested 18+ (adultAttestedAt) instead of a birthdate.
-  isGuest       Boolean      @default(false)
-  adultAttestedAt DateTime?
+  isGuest           Boolean      @default(false)
+  adultAttestedAt   DateTime?
   // Proof the user controls the mailbox (set when they click the link; Google accounts are pre-verified).
-  emailVerifiedAt DateTime?
+  emailVerifiedAt   DateTime?
   // Bumped on password change/reset and email change: older login tokens stop working.
-  tokenVersion  Int          @default(0)
+  tokenVersion      Int          @default(0)
   // Set when the account was deleted but the row is kept (anonymised) for moderation records.
-  deletedAt     DateTime?
-  passwordHash  String?
-  authProvider  AuthProvider
-  displayName   String?
-  avatarUrl     String?
-  birthdate     DateTime?
-  gender        Gender?
-  country       String?
-  createdAt     DateTime     @default(now())
-  trialEndsAt   DateTime
-  currentStreak Int          @default(0)
-  lastActiveDate DateTime?
-  creditCents   Int          @default(0)
-  status        UserStatus   @default(ACTIVE)
-  role          UserRole     @default(USER)
-  rulesAcceptedAt DateTime?
+  deletedAt         DateTime?
+  passwordHash      String?
+  authProvider      AuthProvider
+  displayName       String?
+  avatarUrl         String?
+  birthdate         DateTime?
+  gender            Gender?
+  country           String?
+  createdAt         DateTime     @default(now())
+  trialEndsAt       DateTime
+  currentStreak     Int          @default(0)
+  lastActiveDate    DateTime?
+  creditCents       Int          @default(0)
+  status            UserStatus   @default(ACTIVE)
+  role              UserRole     @default(USER)
+  rulesAcceptedAt   DateTime?
   // While in the future, the user is only matched with other flagged users (shadow queue).
-  flaggedUntil  DateTime?
-  lastDeviceId  String?
-  lastIp        String?
+  flaggedUntil      DateTime?
+  lastDeviceId      String?
+  lastIp            String?
+  // Set only by the identity provider's signed webhook (never from the profile form). Once set,
+  // birthdate and gender are read-only and come from the verified document.
+  idVerifiedAt      DateTime?
+  verifiedBirthdate DateTime?
+  verifiedSex       Gender?
 
   subscriptions    Subscription[]
-  sessionsAsA      CallSession[] @relation("SessionUserA")
-  sessionsAsB      CallSession[] @relation("SessionUserB")
-  friendsAsA       Friend[]      @relation("FriendUserA")
-  friendsAsB       Friend[]      @relation("FriendUserB")
-  sentMessages     Message[]     @relation("MessageSender")
-  receivedMessages Message[]     @relation("MessageReceiver")
-  reportsMade      Report[]      @relation("ReportReporter")
-  reportsReceived  Report[]      @relation("ReportReported")
+  sessionsAsA      CallSession[]          @relation("SessionUserA")
+  sessionsAsB      CallSession[]          @relation("SessionUserB")
+  friendsAsA       Friend[]               @relation("FriendUserA")
+  friendsAsB       Friend[]               @relation("FriendUserB")
+  sentMessages     Message[]              @relation("MessageSender")
+  receivedMessages Message[]              @relation("MessageReceiver")
+  reportsMade      Report[]               @relation("ReportReporter")
+  reportsReceived  Report[]               @relation("ReportReported")
   dailyUsage       DailyUsage[]
   appeals          Appeal[]
   emailTokens      EmailToken[]
-  blocksMade       Block[]      @relation("BlockBlocker")
-  blocksReceived   Block[]      @relation("BlockBlocked")
+  blocksMade       Block[]                @relation("BlockBlocker")
+  blocksReceived   Block[]                @relation("BlockBlocked")
+  identityChecks   IdentityVerification[]
 
   @@index([isGuest, createdAt])
   @@map("users")
@@ -152,9 +177,11 @@ model CallSession {
   startedAt DateTime  @default(now())
   endedAt   DateTime?
   roomId    String?
+  kind      CallKind  @default(RANDOM)
   userA     User      @relation("SessionUserA", fields: [userAId], references: [id])
   userB     User      @relation("SessionUserB", fields: [userBId], references: [id])
   reports   Report[]
+  gate      RoomGate?
 
   @@index([userAId])
   @@index([userBId])
@@ -191,33 +218,33 @@ model Message {
 }
 
 model Report {
-  id             String       @id @default(cuid())
-  reporterId     String
-  reportedUserId String
-  sessionId      String?
-  reasonCode     ReportReason
-  status         ReportStatus @default(OPEN)
-  createdAt      DateTime     @default(now())
-  reviewedById   String?
-  reviewedAt     DateTime?
-  resolution     String?
+  id                String       @id @default(cuid())
+  reporterId        String
+  reportedUserId    String
+  sessionId         String?
+  reasonCode        ReportReason
+  status            ReportStatus @default(OPEN)
+  createdAt         DateTime     @default(now())
+  reviewedById      String?
+  reviewedAt        DateTime?
+  resolution        String?
   // Evidence: a JPEG data URL of the reported user's video frame and the recent chat log.
   // Purged after EVIDENCE_RETENTION_DAYS (default 30), see ReportsService.purgeExpiredEvidence.
-  evidenceImage  String?       @db.Text
-  chatLog        Json?
+  evidenceImage     String?      @db.Text
+  chatLog           Json?
   evidenceExpiresAt DateTime?
   // USER = filed by a person, AUTO_NSFW = raised by the viewer's on-device classifier.
-  source         String        @default("USER")
-  nsfwScore      Float?
+  source            String       @default("USER")
+  nsfwScore         Float?
   // Legal hold: evidence is kept (never purged) until an administrator releases it. Used when a
   // report is escalated (e.g. suspected child abuse) so it can be preserved and reported.
-  legalHold      Boolean       @default(false)
-  escalatedAt    DateTime?
-  escalatedById  String?
-  escalationNote String?
-  reporter       User         @relation("ReportReporter", fields: [reporterId], references: [id])
-  reported       User         @relation("ReportReported", fields: [reportedUserId], references: [id])
-  session        CallSession? @relation(fields: [sessionId], references: [id])
+  legalHold         Boolean      @default(false)
+  escalatedAt       DateTime?
+  escalatedById     String?
+  escalationNote    String?
+  reporter          User         @relation("ReportReporter", fields: [reporterId], references: [id])
+  reported          User         @relation("ReportReported", fields: [reportedUserId], references: [id])
+  session           CallSession? @relation(fields: [sessionId], references: [id])
 
   // One report per reporter/target/session (sessionId is required by the API).
   @@unique([reporterId, reportedUserId, sessionId])
@@ -250,13 +277,13 @@ model PlanLimit {
 
 // IP / device bans. User-level bans use User.status = BANNED.
 model Ban {
-  id        String   @id @default(cuid())
-  type      BanType
-  value     String
-  reason    String?
+  id          String    @id @default(cuid())
+  type        BanType
+  value       String
+  reason      String?
   createdById String?
-  createdAt DateTime @default(now())
-  expiresAt DateTime?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime?
 
   @@unique([type, value])
   @@map("bans")
@@ -266,7 +293,7 @@ model Ban {
 model AuditLog {
   id           String   @id @default(cuid())
   actorId      String
-  action       String   // REPORT_RESOLVED, REPORT_ESCALATED, HOLD_RELEASED, USER_STATUS, ROLE_CHANGED, ...
+  action       String // REPORT_RESOLVED, REPORT_ESCALATED, HOLD_RELEASED, USER_STATUS, ROLE_CHANGED, ...
   targetUserId String?
   reportId     String?
   meta         Json?
@@ -317,7 +344,7 @@ model EmailToken {
   userId    String
   type      EmailTokenType
   tokenHash String         @unique
-  newEmail  String?        // CHANGE_EMAIL: the address being confirmed
+  newEmail  String? // CHANGE_EMAIL: the address being confirmed
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime       @default(now())
@@ -325,4 +352,51 @@ model EmailToken {
 
   @@index([userId, type])
   @@map("email_tokens")
+}
+
+// One identity check by a third-party provider. Only the provider reference and the outcome are kept,
+// never the document or face images.
+model IdentityVerification {
+  id              String         @id @default(cuid())
+  userId          String
+  provider        String
+  providerRef     String         @unique
+  status          IdentityStatus @default(PENDING)
+  reasonCode      String?
+  documentCountry String?
+  createdAt       DateTime       @default(now())
+  completedAt     DateTime?
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("identity_verifications")
+}
+
+// Webhooks are retried by providers; this makes handling them idempotent.
+model IdentityWebhookEvent {
+  provider  String
+  eventId   String
+  createdAt DateTime @default(now())
+
+  @@id([provider, eventId])
+  @@map("identity_webhook_events")
+}
+
+// A friend call that was paused because the conversation turned sexual. Resumes only when both
+// people have a verified adult identity.
+model RoomGate {
+  id        String      @id @default(cuid())
+  sessionId String      @unique
+  userAId   String
+  userBId   String
+  state     GateState
+  trigger   String // VIDEO | TEXT
+  score     Float?
+  pausedAt  DateTime    @default(now())
+  decidedAt DateTime?
+  reason    String? // why it was blocked
+  session   CallSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([state, pausedAt])
+  @@map("room_gates")
 }

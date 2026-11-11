@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthService } from '../auth/auth.service';
@@ -28,6 +28,17 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const current = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!current) throw new NotFoundException('User not found');
+    // After an identity check, date of birth and gender come from the document and cannot be edited here.
+    if (current.idVerifiedAt) {
+      const sameDay = (a?: Date | null, b?: string) => !!a && !!b && a.toISOString().slice(0, 10) === new Date(b).toISOString().slice(0, 10);
+      const changesBirthdate = dto.birthdate !== undefined && !sameDay(current.birthdate, dto.birthdate);
+      const changesGender = dto.gender !== undefined && dto.gender !== current.gender;
+      if (changesBirthdate || changesGender) {
+        throw new BadRequestException('Your date of birth and gender come from your verified ID and cannot be changed.');
+      }
+    }
     let birthdate: Date | undefined;
     if (dto.birthdate) {
       birthdate = new Date(dto.birthdate);
@@ -37,9 +48,9 @@ export class UsersService {
       where: { id: userId },
       data: {
         displayName: dto.displayName,
-        gender: dto.gender,
+        gender: current.idVerifiedAt ? undefined : dto.gender,
         avatarUrl: dto.avatarUrl,
-        birthdate,
+        birthdate: current.idVerifiedAt ? undefined : birthdate,
       },
     });
     return this.sanitize(user);
